@@ -150,3 +150,29 @@ export async function getAllSettings(): Promise<Partial<Record<VaultSettingKey, 
     }, {});
   });
 }
+
+export async function getRecord(id: string): Promise<VaultRecord | null> {
+  return withStore(RECORDS_STORE, "readonly", async (store) => {
+    const record = await requestToPromise(store.get(id) as IDBRequest<VaultRecord | undefined>);
+    return record ?? null;
+  });
+}
+
+export async function getAllRecords(): Promise<VaultRecord[]> {
+  return withStore(RECORDS_STORE, "readonly", async (store) => {
+    const records = await requestToPromise(store.getAll() as IDBRequest<VaultRecord[]>);
+    return records.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+  });
+}
+
+export async function putRecord(record: VaultRecord): Promise<void> {
+  await withStore(RECORDS_STORE, "readwrite", (store) => {
+    store.put(record);
+  });
+}
+
+export async function deleteRecord(id: string): Promise<void> {
+  await withStore(RECORDS_STORE, "readwrite", (store) => {
+    store.delete(id);
+  });
+}

@@ -249,7 +249,7 @@ button {
 }
 
 .vault-panel {
-  align-items: start;
+  align-items: flex-start;
 }
 
 .vault-form {
@@ -281,6 +281,28 @@ button {
   border-color: rgba(14, 107, 92, 0.4);
 }
 
+.password-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.password-toggle {
+  min-width: 4.75rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--brand-strong);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.password-toggle:hover {
+  background: rgba(255, 255, 255, 0.92);
+}
+
 .button:disabled {
   cursor: wait;
   opacity: 0.72;
@@ -296,8 +318,92 @@ button {
   color: var(--brand-strong);
 }
 
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.form-grid-span {
+  grid-column: 1 / -1;
+}
+
+.vault-form textarea {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.vault-form textarea:focus {
+  outline: 2px solid rgba(14, 107, 92, 0.18);
+  outline-offset: 1px;
+  border-color: rgba(14, 107, 92, 0.4);
+}
+
+.record-list {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.record-item {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.record-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.record-topline h3 {
+  margin: 0;
+}
+
+.record-meta {
+  margin: 0.35rem 0 0;
+  font-size: 0.92rem;
+}
+
+.record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+
+.record-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.record-grid p,
+.record-grid strong {
+  margin: 0;
+}
+
+.record-grid-span {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 800px) {
   .grid-two {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid,
+  .record-grid {
     grid-template-columns: 1fr;
   }
 
@@ -311,6 +417,10 @@ button {
 
   .app-header {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .record-topline {
     flex-direction: column;
   }
 }

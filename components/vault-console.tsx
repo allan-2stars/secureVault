@@ -3,6 +3,19 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import { ConnectionStatus } from "@/components/connection-status";
+import { VaultRecordForm } from "@/components/vault-record-form";
+import { VaultRecordList } from "@/components/vault-record-list";
+import {
+  createVaultRecord,
+  getVaultRecordEditorValues,
+  listVaultRecords,
+  removeVaultRecord,
+  revealVaultRecordSecrets,
+  updateVaultRecord,
+  type VaultRecordEditorValues,
+  type VaultRecordSecrets,
+  type VaultRecordSummary
+} from "@/lib/vault/records";
 import { getVaultBootstrapState, initializeVault, unlockVault } from "@/lib/vault/settings";
 
 type VaultStatus = "loading" | "setup" | "locked" | "ready" | "unavailable";
@@ -19,6 +32,10 @@ const readyHighlights = [
   "The vault is unlocked locally with no network dependency."
 ];
 
+function sortRecordsByUpdatedAt(records: VaultRecordSummary[]) {
+  return [...records].sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+}
+
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
@@ -34,6 +51,16 @@ export function VaultConsole() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
+  const [records, setRecords] = useState<VaultRecordSummary[]>([]);
+  const [recordSubmitInFlight, setRecordSubmitInFlight] = useState(false);
+  const [recordBeingEdited, setRecordBeingEdited] = useState<VaultRecordEditorValues | null>(null);
+  const [revealedSecrets, setRevealedSecrets] = useState<Partial<Record<string, VaultRecordSecrets>>>({});
+  const [revealInFlightId, setRevealInFlightId] = useState<string | null>(null);
+
+  const refreshRecords = async () => {
+    const nextRecords = await listVaultRecords();
+    setRecords(nextRecords);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -70,7 +97,8 @@ export function VaultConsole() {
     event.preventDefault();
     setFeedback(null);
 
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     const password = String(formData.get("password") ?? "");
     const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
@@ -88,7 +116,7 @@ export function VaultConsole() {
       setAppMode("privacy");
       setStatus("ready");
       setFeedback("Vault created locally. You are now unlocked for this session.");
-      event.currentTarget.reset();
+      form.reset();
     } catch (error) {
       setFeedback(getErrorMessage(error));
     } finally {
@@ -100,7 +128,8 @@ export function VaultConsole() {
     event.preventDefault();
     setFeedback(null);
 
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     const password = String(formData.get("password") ?? "");
 
     setIsSubmitting(true);
@@ -110,7 +139,7 @@ export function VaultConsole() {
       setSessionKey(key);
       setStatus("ready");
       setFeedback("Vault unlocked locally.");
-      event.currentTarget.reset();
+      form.reset();
     } catch (error) {
       setFeedback(getErrorMessage(error));
     } finally {
@@ -120,8 +149,128 @@ export function VaultConsole() {
 
   const handleLock = () => {
     setSessionKey(null);
+    setRecordBeingEdited(null);
+    setRevealedSecrets({});
     setFeedback("Vault locked. Your session key has been cleared from memory.");
     setStatus("locked");
+  };
+
+  useEffect(() => {
+    if (!sessionKey || status !== "ready") {
+      return;
+    }
+
+    void refreshRecords();
+  }, [sessionKey, status]);
+
+  const handleRecordSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!sessionKey) {
+      setFeedback("Unlock the vault before saving a record.");
+      return;
+    }
+
+    setFeedback(null);
+    setRecordSubmitInFlight(true);
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const values = {
+      title: String(formData.get("title") ?? ""),
+      type: String(formData.get("type") ?? ""),
+      category: String(formData.get("category") ?? ""),
+      tags: String(formData.get("tags") ?? ""),
+      account: String(formData.get("account") ?? ""),
+      password: String(formData.get("password") ?? ""),
+      url: String(formData.get("url") ?? ""),
+      notes_summary: String(formData.get("notes_summary") ?? ""),
+      private_notes: String(formData.get("private_notes") ?? "")
+    };
+
+    try {
+      if (recordBeingEdited) {
+        const updatedRecord = await updateVaultRecord(recordBeingEdited.id, values, sessionKey);
+        setRecords((current) =>
+          sortRecordsByUpdatedAt(
+            current.map((record) => (record.id === updatedRecord.id ? updatedRecord : record))
+          )
+        );
+        setFeedback("Record updated locally.");
+      } else {
+        const createdRecord = await createVaultRecord(values, sessionKey);
+        setRecords((current) => sortRecordsByUpdatedAt([createdRecord, ...current]));
+        setFeedback("Record saved locally.");
+      }
+
+      setRecordBeingEdited(null);
+      setRevealedSecrets({});
+      form.reset();
+    } catch (error) {
+      setFeedback(getErrorMessage(error));
+    } finally {
+      setRecordSubmitInFlight(false);
+    }
+  };
+
+  const handleEditRecord = async (id: string) => {
+    if (!sessionKey) {
+      setFeedback("Unlock the vault before editing a record.");
+      return;
+    }
+
+    try {
+      const editorValues = await getVaultRecordEditorValues(id, sessionKey);
+      setRecordBeingEdited(editorValues);
+      setFeedback("Editing record locally.");
+    } catch (error) {
+      setFeedback(getErrorMessage(error));
+    }
+  };
+
+  const handleDeleteRecord = async (id: string) => {
+    try {
+      await removeVaultRecord(id);
+      setRevealedSecrets((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      if (recordBeingEdited?.id === id) {
+        setRecordBeingEdited(null);
+      }
+      await refreshRecords();
+      setFeedback("Record deleted locally.");
+    } catch (error) {
+      setFeedback(getErrorMessage(error));
+    }
+  };
+
+  const handleToggleRevealRecord = async (id: string) => {
+    if (!sessionKey) {
+      setFeedback("Unlock the vault before revealing secrets.");
+      return;
+    }
+
+    if (revealedSecrets[id]) {
+      setRevealedSecrets((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      return;
+    }
+
+    setRevealInFlightId(id);
+
+    try {
+      const secrets = await revealVaultRecordSecrets(id, sessionKey);
+      setRevealedSecrets((current) => ({ ...current, [id]: secrets }));
+    } catch (error) {
+      setFeedback(getErrorMessage(error));
+    } finally {
+      setRevealInFlightId(null);
+    }
   };
 
   return (
@@ -274,6 +423,23 @@ export function VaultConsole() {
                 ))}
               </ul>
             </article>
+          </section>
+
+          <section className="grid grid-two vault-panel">
+            <VaultRecordForm
+              initialValues={recordBeingEdited}
+              isSubmitting={recordSubmitInFlight}
+              onCancelEdit={() => setRecordBeingEdited(null)}
+              onSubmit={handleRecordSubmit}
+            />
+            <VaultRecordList
+              onDelete={handleDeleteRecord}
+              onEdit={handleEditRecord}
+              onToggleReveal={handleToggleRevealRecord}
+              records={records}
+              revealedSecrets={revealedSecrets}
+              revealInFlightId={revealInFlightId}
+            />
           </section>
 
           <p className="section-title">Next milestone</p>
