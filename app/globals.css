@@ -248,6 +248,54 @@ button {
   font-size: 0.92rem;
 }
 
+.vault-panel {
+  align-items: start;
+}
+
+.vault-form {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.2rem;
+}
+
+.vault-form label {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.vault-form input {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+  font: inherit;
+}
+
+.vault-form input:focus {
+  outline: 2px solid rgba(14, 107, 92, 0.18);
+  outline-offset: 1px;
+  border-color: rgba(14, 107, 92, 0.4);
+}
+
+.button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+  transform: none;
+}
+
+.feedback {
+  margin: 1rem 0 0;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(14, 107, 92, 0.16);
+  border-radius: var(--radius-md);
+  background: rgba(255, 252, 246, 0.82);
+  color: var(--brand-strong);
+}
+
 @media (max-width: 800px) {
   .grid-two {
     grid-template-columns: 1fr;
