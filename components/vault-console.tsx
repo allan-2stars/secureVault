@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { ConnectionStatus } from "@/components/connection-status";
 import { VaultRecordForm } from "@/components/vault-record-form";
 import { VaultRecordList } from "@/components/vault-record-list";
+import { VaultSearch } from "@/components/vault-search";
 import {
   createVaultRecord,
   getVaultRecordEditorValues,
@@ -16,6 +17,7 @@ import {
   type VaultRecordSecrets,
   type VaultRecordSummary
 } from "@/lib/vault/records";
+import { filterRecordsByKeyword } from "@/lib/vault/search";
 import { getVaultBootstrapState, initializeVault, unlockVault } from "@/lib/vault/settings";
 
 type VaultStatus = "loading" | "setup" | "locked" | "ready" | "unavailable";
@@ -56,11 +58,14 @@ export function VaultConsole() {
   const [recordBeingEdited, setRecordBeingEdited] = useState<VaultRecordEditorValues | null>(null);
   const [revealedSecrets, setRevealedSecrets] = useState<Partial<Record<string, VaultRecordSecrets>>>({});
   const [revealInFlightId, setRevealInFlightId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const refreshRecords = async () => {
     const nextRecords = await listVaultRecords();
     setRecords(nextRecords);
   };
+
+  const visibleRecords = filterRecordsByKeyword(records, searchQuery);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,10 +154,11 @@ export function VaultConsole() {
 
   const handleLock = () => {
     setSessionKey(null);
-    setRecordBeingEdited(null);
-    setRevealedSecrets({});
-    setFeedback("Vault locked. Your session key has been cleared from memory.");
-    setStatus("locked");
+      setRecordBeingEdited(null);
+      setRevealedSecrets({});
+      setFeedback("Vault locked. Your session key has been cleared from memory.");
+      setSearchQuery("");
+      setStatus("locked");
   };
 
   useEffect(() => {
@@ -425,6 +431,15 @@ export function VaultConsole() {
             </article>
           </section>
 
+          <section className="grid">
+            <VaultSearch
+              matchCount={visibleRecords.length}
+              onChange={setSearchQuery}
+              query={searchQuery}
+              totalCount={records.length}
+            />
+          </section>
+
           <section className="grid grid-two vault-panel">
             <VaultRecordForm
               initialValues={recordBeingEdited}
@@ -436,7 +451,7 @@ export function VaultConsole() {
               onDelete={handleDeleteRecord}
               onEdit={handleEditRecord}
               onToggleReveal={handleToggleRevealRecord}
-              records={records}
+              records={visibleRecords}
               revealedSecrets={revealedSecrets}
               revealInFlightId={revealInFlightId}
             />
