@@ -154,10 +154,21 @@ export async function listLocalVaultApiSettings(): Promise<LocalVaultApiSetting[
   });
 }
 
-export async function getLocalVaultApiSetting(key: string): Promise<LocalVaultApiSetting> {
-  return requestJson<LocalVaultApiSetting>(`/api/settings/${key}`, {
-    method: "GET"
+export async function getLocalVaultApiSetting(key: string): Promise<LocalVaultApiSetting | null> {
+  const response = await fetch(`${requireLocalVaultApiBaseUrl()}/api/settings/${key}`, {
+    method: "GET",
+    cache: "no-store"
   });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(await parseResponseError(response));
+  }
+
+  return (await response.json()) as LocalVaultApiSetting;
 }
 
 export async function upsertLocalVaultApiSetting(key: string, value: unknown): Promise<LocalVaultApiSetting> {

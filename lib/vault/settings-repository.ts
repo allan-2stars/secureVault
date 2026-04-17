@@ -108,7 +108,7 @@ export async function getVaultSetting<T>(key: VaultSettingKey): Promise<T | null
   return getVaultSettingWithClients<T>(key, {
     getIndexedDbSetting,
     getApiSetting: isLocalVaultApiConfigured()
-      ? async (settingKey) => (await getLocalVaultApiSetting(settingKey)).value
+      ? async (settingKey) => (await getLocalVaultApiSetting(settingKey))?.value ?? null
       : undefined
   });
 }

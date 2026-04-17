@@ -58,6 +58,7 @@ export function VaultConsole() {
   // These values come from local vault settings and help explain the current vault state in the UI.
   const [encryptionVersion, setEncryptionVersion] = useState<string | null>(null);
   const [appMode, setAppMode] = useState<string | null>(null);
+  const [setupBlockedReason, setSetupBlockedReason] = useState<string | null>(null);
   // feedback is for general user-facing messages like "saved", "restored", or errors.
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -140,7 +141,8 @@ export function VaultConsole() {
 
         setEncryptionVersion(bootstrap.encryptionVersion);
         setAppMode(bootstrap.mode);
-        setStatus(bootstrap.initialized ? "locked" : "setup");
+        setSetupBlockedReason(bootstrap.setupBlockedReason);
+        setStatus(bootstrap.setupBlockedReason ? "unavailable" : bootstrap.initialized ? "locked" : "setup");
         setAiApiBaseUrl((await getVaultSetting<string>("ai_api_base_url")) ?? "");
         await refreshJobCount();
         await refreshRecords();
@@ -184,6 +186,7 @@ export function VaultConsole() {
       setSessionKey(key);
       setEncryptionVersion("aes-gcm-v1");
       setAppMode("privacy");
+      setSetupBlockedReason(null);
       setStatus("ready");
       setFeedback("Vault created locally. You are now unlocked for this session.");
       form.reset();
@@ -463,20 +466,26 @@ export function VaultConsole() {
     try {
       // Read the uploaded backup file as text and replace the local snapshot with it.
       const text = await file.text();
-      await restoreBackupFromText(text);
+      const restoreResult = await restoreBackupFromText(text, sessionKey);
       await Promise.all([refreshRecords(), refreshJobCount()]);
       // After restore, queue a fresh AI reindex so the Pi side can rebuild from the restored data.
       await requeueAllRecordsForIndexing();
       await refreshJobCount();
-      // Lock the vault after restore so the session state is reset cleanly.
-      setSessionKey(null);
       setRecordBeingEdited(null);
       setRevealedSecrets({});
       setSearchQuery("");
       setSemanticResults(null);
       setSemanticStatusMessage(null);
-      setStatus("locked");
-      setFeedback("Backup restored. The vault has been locked and all records were queued for reindex.");
+
+      if (restoreResult.keepSession) {
+        setStatus("ready");
+        setFeedback("Backup restored. Your current vault session stayed unlocked and all records were queued for reindex.");
+      } else {
+        // Lock when the restored vault does not match the current in-memory key.
+        setSessionKey(null);
+        setStatus("locked");
+        setFeedback("Backup restored. Enter the matching master password to unlock the restored vault. All records were queued for reindex.");
+      }
     } catch (error) {
       setFeedback(getErrorMessage(error));
     } finally {
@@ -535,10 +544,10 @@ export function VaultConsole() {
       {status === "unavailable" ? (
         <section className="grid">
           <article className="card">
-            <h2>Browser support required</h2>
+            <h2>{setupBlockedReason ? "Vault recovery required" : "Browser support required"}</h2>
             <p>
-              SecureVault AI needs IndexedDB and Web Crypto to initialize the local vault in
-              a safe way.
+              {setupBlockedReason ??
+                "SecureVault AI needs IndexedDB and Web Crypto to initialize the local vault in a safe way."}
             </p>
           </article>
         </section>

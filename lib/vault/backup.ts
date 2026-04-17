@@ -1,3 +1,4 @@
+import { verifyPasswordVerifier } from "@/lib/crypto/vault-crypto";
 import { createVaultSnapshot, replaceVaultSnapshot, type VaultSnapshot } from "@/lib/vault/backup-repository";
 import { listStoredVaultRecords } from "@/lib/vault/records";
 import { queueUpsertJob } from "@/lib/vault/ai-jobs";
@@ -20,13 +21,32 @@ export async function createBackupBlob(): Promise<Blob> {
   });
 }
 
-export async function restoreBackupFromText(text: string): Promise<void> {
+function getSnapshotSetting(snapshot: VaultSnapshot, key: string): unknown {
+  return snapshot.settings.find((entry) => entry.key === key)?.value ?? null;
+}
+
+export async function restoreBackupFromText(
+  text: string,
+  sessionKey?: CryptoKey | null
+): Promise<{ keepSession: boolean }> {
   const parsed = JSON.parse(text) as unknown;
   ensureValidSnapshot(parsed);
-  await replaceVaultSnapshot({
+  const snapshot = {
     ...parsed,
     jobs: []
-  });
+  };
+
+  await replaceVaultSnapshot(snapshot);
+
+  const serializedVerifier = getSnapshotSetting(snapshot, "password_verifier");
+  const keepSession =
+    sessionKey != null && typeof serializedVerifier === "string"
+      ? await verifyPasswordVerifier(serializedVerifier, sessionKey)
+      : false;
+
+  return {
+    keepSession
+  };
 }
 
 export async function requeueAllRecordsForIndexing(): Promise<void> {

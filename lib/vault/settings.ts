@@ -5,30 +5,46 @@ import {
   generateSalt,
   verifyPasswordVerifier
 } from "@/lib/crypto/vault-crypto";
+import { listVaultRecordsForRead } from "@/lib/vault/record-repository";
 import { getAllVaultSettings, setVaultSettings } from "@/lib/vault/settings-repository";
 
 type VaultBootstrapState = {
   encryptionVersion: string | null;
   initialized: boolean;
   mode: "privacy" | null;
+  setupBlockedReason: string | null;
 };
 
 export async function getVaultBootstrapState(): Promise<VaultBootstrapState> {
   const settings = await getAllVaultSettings();
+  const records = await listVaultRecordsForRead();
+  const initialized = settings.vault_initialized === true;
+  const setupBlockedReason =
+    !initialized && records.length > 0
+      ? "Existing encrypted records were found in durable storage, but the vault verifier metadata is missing. Creating a new vault would orphan or overwrite protected data."
+      : null;
 
   return {
-    initialized: settings.vault_initialized === true,
+    initialized,
     encryptionVersion:
       typeof settings.encryption_version === "string" ? settings.encryption_version : null,
-    mode: settings.app_mode === "privacy" ? "privacy" : null
+    mode: settings.app_mode === "privacy" ? "privacy" : null,
+    setupBlockedReason
   };
 }
 
 export async function initializeVault(password: string): Promise<CryptoKey> {
   const existingSettings = await getAllVaultSettings();
+  const existingRecords = await listVaultRecordsForRead();
 
   if (existingSettings.vault_initialized === true) {
     throw new Error("A vault already exists. Unlock it with the current master password.");
+  }
+
+  if (existingRecords.length > 0) {
+    throw new Error(
+      "Existing encrypted records are present in durable storage, but vault metadata is missing. A destructive reset flow is required before creating a new vault."
+    );
   }
 
   const normalizedPassword = password.trim();
