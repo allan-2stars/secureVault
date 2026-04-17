@@ -4,9 +4,11 @@ import assert from "node:assert/strict";
 import type { VaultRecord } from "@/lib/storage/indexeddb";
 import type { LocalVaultApiRecord } from "@/lib/vault/local-vault-api";
 import {
+  deleteVaultRecordWithClients,
   getVaultRecordForReadWithClients,
   listVaultRecordsForReadWithClients,
-  mapLocalVaultApiRecordToVaultRecord
+  mapLocalVaultApiRecordToVaultRecord,
+  saveVaultRecordWithClients
 } from "@/lib/vault/record-repository";
 
 function createIndexedDbRecord(overrides: Partial<VaultRecord> = {}): VaultRecord {
@@ -87,4 +89,76 @@ test("record list falls back to IndexedDB when the Local Vault API is unavailabl
   });
 
   assert.equal(records[0]?.title, "Offline Local Copy");
+});
+
+test("record create writes through the Local Vault API before the IndexedDB mirror", async () => {
+  const writeOrder: string[] = [];
+  const sourceRecord = createIndexedDbRecord({
+    title: "New Durable Record"
+  });
+
+  const savedRecord = await saveVaultRecordWithClients(sourceRecord, {
+    putIndexedDbRecord: async (record) => {
+      writeOrder.push(`indexeddb:${record.title}`);
+    },
+    upsertApiRecord: async (record) => {
+      writeOrder.push(`api:${record.title}`);
+      return record;
+    }
+  });
+
+  assert.equal(savedRecord.title, "New Durable Record");
+  assert.deepEqual(writeOrder, ["api:New Durable Record", "indexeddb:New Durable Record"]);
+});
+
+test("record update uses the Local Vault API response as the mirrored IndexedDB payload", async () => {
+  let mirroredTitle = "";
+
+  await saveVaultRecordWithClients(createIndexedDbRecord({
+    title: "Old Name"
+  }), {
+    putIndexedDbRecord: async (record) => {
+      mirroredTitle = record.title;
+    },
+    upsertApiRecord: async (record) => ({
+      ...record,
+      title: "Updated By API"
+    })
+  });
+
+  assert.equal(mirroredTitle, "Updated By API");
+});
+
+test("record delete removes the SQLite record before clearing the IndexedDB mirror", async () => {
+  const deleteOrder: string[] = [];
+
+  await deleteVaultRecordWithClients("rec-1", {
+    deleteApiRecord: async (id) => {
+      deleteOrder.push(`api:${id}`);
+    },
+    deleteIndexedDbRecord: async (id) => {
+      deleteOrder.push(`indexeddb:${id}`);
+    }
+  });
+
+  assert.deepEqual(deleteOrder, ["api:rec-1", "indexeddb:rec-1"]);
+});
+
+test("record write stops and surfaces the error when the Local Vault API is unavailable", async () => {
+  let mirrored = false;
+
+  await assert.rejects(
+    () =>
+      saveVaultRecordWithClients(createIndexedDbRecord(), {
+        putIndexedDbRecord: async () => {
+          mirrored = true;
+        },
+        upsertApiRecord: async () => {
+          throw new Error("Local Vault API unavailable");
+        }
+      }),
+    /Local Vault API unavailable/
+  );
+
+  assert.equal(mirrored, false);
 });

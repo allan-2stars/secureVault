@@ -3,12 +3,10 @@ import { buildAiIndexText } from "@/lib/vault/ai-index";
 import {
   deleteJob,
   getAllJobs,
-  getRecord,
   putJob,
-  putRecord,
   type VaultJob,
-  type VaultRecord
 } from "@/lib/storage/indexeddb";
+import { syncRecordIndexStatus } from "@/lib/vault/record-repository";
 import type { VaultRecordSummary } from "@/lib/vault/records";
 
 function jobIdFor(type: VaultJob["type"], recordId: string): string {
@@ -21,19 +19,6 @@ function nowIso() {
 
 async function persistJob(job: VaultJob) {
   await putJob(job);
-}
-
-async function markRecordIndexStatus(recordId: string, status: VaultRecord["index_status"]) {
-  const record = await getRecord(recordId);
-
-  if (!record) {
-    return;
-  }
-
-  await putRecord({
-    ...record,
-    index_status: status
-  });
 }
 
 export async function queueUpsertJob(record: VaultRecordSummary): Promise<void> {
@@ -54,7 +39,7 @@ export async function queueUpsertJob(record: VaultRecordSummary): Promise<void> 
     last_attempt: null
   });
 
-  await markRecordIndexStatus(record.id, "pending");
+  await syncRecordIndexStatus(record.id, "pending");
 }
 
 export async function queueDeleteJob(recordId: string): Promise<void> {
@@ -92,7 +77,7 @@ async function runJob(job: VaultJob): Promise<void> {
       type
     });
 
-    await markRecordIndexStatus(record_id, "synced");
+    await syncRecordIndexStatus(record_id, "synced");
     await deleteJob(job.id);
     return;
   }
@@ -112,7 +97,7 @@ async function failJob(job: VaultJob): Promise<void> {
   });
 
   if (job.type === "index_upsert") {
-    await markRecordIndexStatus(job.payload.record_id, "pending");
+    await syncRecordIndexStatus(job.payload.record_id, "pending");
   }
 }
 

@@ -1,11 +1,11 @@
 import { decryptString, encryptString } from "@/lib/crypto/vault-crypto";
-import { getAllRecords, deleteRecord, putRecord, type VaultRecord } from "@/lib/storage/indexeddb";
+import { getAllRecords, type VaultRecord } from "@/lib/storage/indexeddb";
 import { createAccountHint } from "@/lib/vault/account";
 import {
+  deleteVaultRecord,
   getVaultRecordForRead,
   listVaultRecordsForRead,
-  mirrorRecordDelete,
-  mirrorRecordUpsert
+  saveVaultRecord
 } from "@/lib/vault/record-repository";
 
 export type VaultRecordFormValues = {
@@ -141,9 +141,8 @@ export async function createVaultRecord(
 ): Promise<VaultRecordSummary> {
   await ensureUniqueTitle(values.title);
   const record = await encryptRecord(values, key);
-  await putRecord(record);
-  void mirrorRecordUpsert(record);
-  return toSummary(record);
+  const savedRecord = await saveVaultRecord(record);
+  return toSummary(savedRecord);
 }
 
 export async function updateVaultRecord(
@@ -165,14 +164,12 @@ export async function updateVaultRecord(
     updated_at: new Date().toISOString()
   };
 
-  await putRecord(savedRecord);
-  void mirrorRecordUpsert(savedRecord);
-  return toSummary(savedRecord);
+  const persistedRecord = await saveVaultRecord(savedRecord);
+  return toSummary(persistedRecord);
 }
 
 export async function removeVaultRecord(id: string): Promise<void> {
-  await deleteRecord(id);
-  void mirrorRecordDelete(id);
+  await deleteVaultRecord(id);
 }
 
 export async function revealVaultRecordSecrets(

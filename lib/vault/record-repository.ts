@@ -66,35 +66,6 @@ export function mapVaultRecordToLocalVaultApiRecord(record: VaultRecord): LocalV
   };
 }
 
-function buildRecordMap(records: VaultRecord[]): Map<string, VaultRecord> {
-  return new Map(records.map((record) => [record.id, record]));
-}
-
-export function shouldUseIndexedDbFallback(
-  apiRecords: VaultRecord[],
-  indexedDbRecords: VaultRecord[]
-): boolean {
-  if (indexedDbRecords.length === 0) {
-    return false;
-  }
-
-  if (apiRecords.length !== indexedDbRecords.length) {
-    return true;
-  }
-
-  const apiRecordsById = buildRecordMap(apiRecords);
-
-  return indexedDbRecords.some((indexedDbRecord) => {
-    const apiRecord = apiRecordsById.get(indexedDbRecord.id);
-
-    if (!apiRecord) {
-      return true;
-    }
-
-    return apiRecord.updated_at < indexedDbRecord.updated_at;
-  });
-}
-
 export type RecordReadClients = {
   getIndexedDbRecord: (id: string) => Promise<VaultRecord | null>;
   listIndexedDbRecords: () => Promise<VaultRecord[]>;
@@ -102,25 +73,27 @@ export type RecordReadClients = {
   listApiRecords?: () => Promise<LocalVaultApiRecord[]>;
 };
 
+export type RecordWriteClients = {
+  deleteApiRecord?: (id: string) => Promise<void>;
+  deleteIndexedDbRecord: (id: string) => Promise<void>;
+  putIndexedDbRecord: (record: VaultRecord) => Promise<void>;
+  upsertApiRecord?: (record: LocalVaultApiRecord) => Promise<LocalVaultApiRecord>;
+};
+
+export type RecordSaveClients = Pick<RecordWriteClients, "putIndexedDbRecord" | "upsertApiRecord">;
+export type RecordDeleteClients = Pick<RecordWriteClients, "deleteApiRecord" | "deleteIndexedDbRecord">;
+
 export async function listVaultRecordsForReadWithClients(
   clients: Pick<RecordReadClients, "listIndexedDbRecords" | "listApiRecords">
 ): Promise<VaultRecord[]> {
-  const indexedDbRecords = await clients.listIndexedDbRecords();
-
   if (!clients.listApiRecords) {
-    return sortRecordsByUpdatedAt(indexedDbRecords);
+    return sortRecordsByUpdatedAt(await clients.listIndexedDbRecords());
   }
 
   try {
-    const apiRecords = sortRecordsByUpdatedAt((await clients.listApiRecords()).map(mapLocalVaultApiRecordToVaultRecord));
-
-    if (shouldUseIndexedDbFallback(apiRecords, indexedDbRecords)) {
-      return sortRecordsByUpdatedAt(indexedDbRecords);
-    }
-
-    return apiRecords;
+    return sortRecordsByUpdatedAt((await clients.listApiRecords()).map(mapLocalVaultApiRecordToVaultRecord));
   } catch {
-    return sortRecordsByUpdatedAt(indexedDbRecords);
+    return sortRecordsByUpdatedAt(await clients.listIndexedDbRecords());
   }
 }
 
@@ -128,7 +101,7 @@ export function choosePreferredRecord(
   apiRecord: VaultRecord | null,
   indexedDbRecord: VaultRecord | null
 ): VaultRecord | null {
-  if (apiRecord && (!indexedDbRecord || apiRecord.updated_at >= indexedDbRecord.updated_at)) {
+  if (apiRecord) {
     return apiRecord;
   }
 
@@ -167,26 +140,58 @@ export async function getVaultRecordForRead(id: string): Promise<VaultRecord | n
   });
 }
 
-export async function mirrorRecordUpsert(record: VaultRecord): Promise<void> {
-  if (!isLocalVaultApiConfigured()) {
-    return;
-  }
+export async function saveVaultRecordWithClients(
+  record: VaultRecord,
+  clients: RecordSaveClients
+): Promise<VaultRecord> {
+  const savedRecord = clients.upsertApiRecord
+    ? mapLocalVaultApiRecordToVaultRecord(await clients.upsertApiRecord(mapVaultRecordToLocalVaultApiRecord(record)))
+    : record;
 
-  try {
-    await upsertLocalVaultApiRecord(mapVaultRecordToLocalVaultApiRecord(record));
-  } catch {
-    // SQLite mirroring is best-effort during the transition so local writes stay responsive.
-  }
+  await clients.putIndexedDbRecord(savedRecord);
+  return savedRecord;
 }
 
-export async function mirrorRecordDelete(id: string): Promise<void> {
-  if (!isLocalVaultApiConfigured()) {
+export async function deleteVaultRecordWithClients(
+  id: string,
+  clients: RecordDeleteClients
+): Promise<void> {
+  if (clients.deleteApiRecord) {
+    await clients.deleteApiRecord(id);
+  }
+
+  await clients.deleteIndexedDbRecord(id);
+}
+
+export async function saveVaultRecord(record: VaultRecord): Promise<VaultRecord> {
+  return saveVaultRecordWithClients(record, {
+    putIndexedDbRecord: async (nextRecord) => {
+      const { putRecord } = await import("@/lib/storage/indexeddb");
+      await putRecord(nextRecord);
+    },
+    upsertApiRecord: isLocalVaultApiConfigured() ? upsertLocalVaultApiRecord : undefined
+  });
+}
+
+export async function deleteVaultRecord(id: string): Promise<void> {
+  return deleteVaultRecordWithClients(id, {
+    deleteApiRecord: isLocalVaultApiConfigured() ? deleteLocalVaultApiRecord : undefined,
+    deleteIndexedDbRecord: async (recordId) => {
+      const { deleteRecord } = await import("@/lib/storage/indexeddb");
+      await deleteRecord(recordId);
+    }
+  });
+}
+
+export async function syncRecordIndexStatus(recordId: string, status: VaultRecord["index_status"]): Promise<void> {
+  const record = await getVaultRecordForRead(recordId);
+
+  if (!record) {
     return;
   }
 
-  try {
-    await deleteLocalVaultApiRecord(id);
-  } catch {
-    // Delete mirroring is also best-effort until the write path fully migrates.
-  }
+  await saveVaultRecord({
+    ...record,
+    index_status: status
+  });
 }
