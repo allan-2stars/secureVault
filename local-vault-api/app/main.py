@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from app.config import settings
 from app.db import get_connection
@@ -47,3 +48,8 @@ def root() -> dict:
         "status": "running",
         "environment": settings.app_env,
     }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    return Response(status_code=204)
