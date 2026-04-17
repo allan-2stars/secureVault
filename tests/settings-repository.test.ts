@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import type { VaultSettingKey } from "@/lib/storage/indexeddb";
 import {
+  deleteVaultSettingWithClients,
   getAllVaultSettingsWithClients,
   getVaultSettingWithClients,
   setVaultSettingsWithClients
@@ -51,7 +53,7 @@ test("vault metadata cannot silently fall back to a fresh setup when SQLite sett
           throw new Error("SQLite unavailable");
         }
       }),
-    /Vault protection cannot be verified/
+    /Durable vault settings cannot be verified/
   );
 });
 
@@ -67,6 +69,7 @@ test("fresh setup is blocked when an initialized vault already exists", async ()
       { key: "app_mode", value: "privacy" }
     ],
     {
+      deleteIndexedDbSetting: async () => {},
       setIndexedDbSetting: async () => {},
       setIndexedDbSettings: async () => {},
       upsertApiSetting: async () => {
@@ -77,6 +80,34 @@ test("fresh setup is blocked when an initialized vault already exists", async ()
   );
 
   assert.equal(apiWrites, 5);
+});
+
+test("primary settings persistence no longer depends on IndexedDB when SQLite settings are available", async () => {
+  const settings = await getAllVaultSettingsWithClients({
+    getIndexedDbSettingsMap: async () => ({
+      ai_api_base_url: "http://stale-browser-copy"
+    }),
+    listApiSettings: async () => [
+      { key: "ai_api_base_url", value: "http://sqlite-source-of-truth" }
+    ]
+  });
+
+  assert.equal(settings.ai_api_base_url, "http://sqlite-source-of-truth");
+});
+
+test("restore can delete durable settings through the shared repository contract", async () => {
+  const deleted: VaultSettingKey[] = [];
+
+  await deleteVaultSettingWithClients("ai_api_base_url", {
+    deleteIndexedDbSetting: async (key) => {
+      deleted.push(key);
+    },
+    deleteApiSetting: async (key) => {
+      deleted.push(key);
+    }
+  });
+
+  assert.deepEqual(deleted, ["ai_api_base_url", "ai_api_base_url"]);
 });
 
 test("correct master password verification still succeeds against persisted verifier material", async () => {

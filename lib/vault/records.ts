@@ -1,9 +1,10 @@
 import { decryptString, encryptString } from "@/lib/crypto/vault-crypto";
-import { getAllRecords, type VaultRecord } from "@/lib/storage/indexeddb";
+import { type VaultRecord } from "@/lib/storage/indexeddb";
 import { createAccountHint } from "@/lib/vault/account";
 import {
   deleteVaultRecord,
   getVaultRecordForRead,
+  listStoredVaultRecords as listStoredVaultRecordsFromRepository,
   listVaultRecordsForRead,
   saveVaultRecord
 } from "@/lib/vault/record-repository";
@@ -131,7 +132,7 @@ export async function listVaultRecords(): Promise<VaultRecordSummary[]> {
 }
 
 export async function listStoredVaultRecords(): Promise<VaultRecordSummary[]> {
-  const records = await getAllRecords();
+  const records = await listStoredVaultRecordsFromRepository();
   return records.map(toSummary);
 }
 

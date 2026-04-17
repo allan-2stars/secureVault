@@ -23,8 +23,8 @@ import {
 } from "@/lib/vault/records";
 import { filterRecordsByKeyword, rankSemanticResults } from "@/lib/vault/search";
 import { listVaultJobs } from "@/lib/vault/job-repository";
+import { getVaultSetting, setVaultSetting } from "@/lib/vault/settings-repository";
 import { getVaultBootstrapState, initializeVault, unlockVault } from "@/lib/vault/settings";
-import { getSetting, setSetting } from "@/lib/storage/indexeddb";
 
 type VaultStatus = "loading" | "setup" | "locked" | "ready" | "unavailable";
 
@@ -141,7 +141,7 @@ export function VaultConsole() {
         setEncryptionVersion(bootstrap.encryptionVersion);
         setAppMode(bootstrap.mode);
         setStatus(bootstrap.initialized ? "locked" : "setup");
-        setAiApiBaseUrl((await getSetting<string>("ai_api_base_url")) ?? "");
+        setAiApiBaseUrl((await getVaultSetting<string>("ai_api_base_url")) ?? "");
         await refreshJobCount();
         await refreshRecords();
       } catch (error) {
@@ -385,7 +385,7 @@ export function VaultConsole() {
 
     try {
       // Save the Pi wrapper base URL locally so the browser knows where to send AI requests.
-      await setSetting("ai_api_base_url", nextUrl);
+      await setVaultSetting("ai_api_base_url", nextUrl);
       setAiApiBaseUrl(nextUrl);
       setAiStatusMessage("Pi AI API URL saved locally.");
     } catch (error) {

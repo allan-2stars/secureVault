@@ -148,6 +148,12 @@ export async function setSettings(entries: Array<VaultSettingRecord>): Promise<v
   });
 }
 
+export async function deleteSetting(key: VaultSettingKey): Promise<void> {
+  await withStore(SETTINGS_STORE, "readwrite", (store) => {
+    store.delete(key);
+  });
+}
+
 export async function getAllSettings(): Promise<Partial<Record<VaultSettingKey, unknown>>> {
   return withStore(SETTINGS_STORE, "readonly", async (store) => {
     const records = await requestToPromise(store.getAll() as IDBRequest<VaultSettingRecord[]>);

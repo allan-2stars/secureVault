@@ -133,6 +133,10 @@ export async function listVaultRecordsForRead(): Promise<VaultRecord[]> {
   });
 }
 
+export async function listStoredVaultRecords(): Promise<VaultRecord[]> {
+  return getAllRecords();
+}
+
 export async function getVaultRecordForRead(id: string): Promise<VaultRecord | null> {
   return getVaultRecordForReadWithClients(id, {
     getIndexedDbRecord: getRecord,

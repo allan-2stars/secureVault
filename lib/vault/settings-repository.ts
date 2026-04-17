@@ -1,4 +1,5 @@
 import {
+  deleteSetting as deleteIndexedDbSetting,
   getAllSettings,
   getSetting as getIndexedDbSetting,
   setSetting as setIndexedDbSetting,
@@ -7,6 +8,7 @@ import {
   type VaultSettingRecord
 } from "@/lib/storage/indexeddb";
 import {
+  deleteLocalVaultApiSetting,
   getLocalVaultApiSetting,
   isLocalVaultApiConfigured,
   listLocalVaultApiSettings,
@@ -14,14 +16,6 @@ import {
 } from "@/lib/vault/local-vault-api";
 
 type SettingsMap = Partial<Record<VaultSettingKey, unknown>>;
-
-export const SQLITE_VAULT_SETTING_KEYS = [
-  "vault_initialized",
-  "password_salt",
-  "password_verifier",
-  "encryption_version",
-  "app_mode"
-] satisfies VaultSettingKey[];
 
 type SettingsReadClients = {
   getIndexedDbSetting: <T>(key: VaultSettingKey) => Promise<T | null>;
@@ -31,14 +25,12 @@ type SettingsReadClients = {
 };
 
 type SettingsWriteClients = {
+  deleteIndexedDbSetting: (key: VaultSettingKey) => Promise<void>;
   setIndexedDbSetting: <T>(key: VaultSettingKey, value: T) => Promise<void>;
   setIndexedDbSettings: (entries: Array<VaultSettingRecord>) => Promise<void>;
+  deleteApiSetting?: (key: VaultSettingKey) => Promise<void>;
   upsertApiSetting?: (key: VaultSettingKey, value: unknown) => Promise<unknown>;
 };
-
-function isSQLiteBackedVaultKey(key: VaultSettingKey): boolean {
-  return (SQLITE_VAULT_SETTING_KEYS as readonly VaultSettingKey[]).includes(key);
-}
 
 function toSettingsMap(entries: Array<{ key: VaultSettingKey; value: unknown }>): SettingsMap {
   return entries.reduce<SettingsMap>((accumulator, entry) => {
@@ -51,14 +43,14 @@ export async function getVaultSettingWithClients<T>(
   key: VaultSettingKey,
   clients: Pick<SettingsReadClients, "getIndexedDbSetting" | "getApiSetting">
 ): Promise<T | null> {
-  if (!isSQLiteBackedVaultKey(key) || !clients.getApiSetting) {
+  if (!clients.getApiSetting) {
     return clients.getIndexedDbSetting<T>(key);
   }
 
   try {
     return (await clients.getApiSetting(key)) as T;
   } catch {
-    throw new Error("Local Vault API is unavailable. Vault protection cannot be verified.");
+    throw new Error("Local Vault API is unavailable. Durable vault settings cannot be verified.");
   }
 }
 
@@ -70,15 +62,9 @@ export async function getAllVaultSettingsWithClients(
   }
 
   try {
-    const apiSettings = await clients.listApiSettings();
-    const indexedDbSettings = await clients.getIndexedDbSettingsMap();
-
-    return {
-      ...indexedDbSettings,
-      ...toSettingsMap(apiSettings)
-    };
+    return toSettingsMap(await clients.listApiSettings());
   } catch {
-    throw new Error("Local Vault API is unavailable. Vault protection cannot be verified.");
+    throw new Error("Local Vault API is unavailable. Durable vault settings cannot be verified.");
   }
 }
 
@@ -87,7 +73,7 @@ export async function setVaultSettingWithClients<T>(
   value: T,
   clients: Pick<SettingsWriteClients, "setIndexedDbSetting" | "upsertApiSetting">
 ): Promise<void> {
-  if (isSQLiteBackedVaultKey(key) && clients.upsertApiSetting) {
+  if (clients.upsertApiSetting) {
     await clients.upsertApiSetting(key, value);
   }
 
@@ -100,13 +86,22 @@ export async function setVaultSettingsWithClients(
 ): Promise<void> {
   if (clients.upsertApiSetting) {
     for (const entry of entries) {
-      if (isSQLiteBackedVaultKey(entry.key)) {
-        await clients.upsertApiSetting(entry.key, entry.value);
-      }
+      await clients.upsertApiSetting(entry.key, entry.value);
     }
   }
 
   await clients.setIndexedDbSettings(entries);
+}
+
+export async function deleteVaultSettingWithClients(
+  key: VaultSettingKey,
+  clients: Pick<SettingsWriteClients, "deleteIndexedDbSetting" | "deleteApiSetting">
+): Promise<void> {
+  if (clients.deleteApiSetting) {
+    await clients.deleteApiSetting(key);
+  }
+
+  await clients.deleteIndexedDbSetting(key);
 }
 
 export async function getVaultSetting<T>(key: VaultSettingKey): Promise<T | null> {
@@ -140,8 +135,16 @@ export async function setVaultSetting<T>(key: VaultSettingKey, value: T): Promis
 
 export async function setVaultSettings(entries: Array<VaultSettingRecord>): Promise<void> {
   return setVaultSettingsWithClients(entries, {
+    deleteIndexedDbSetting,
     setIndexedDbSetting,
     setIndexedDbSettings,
     upsertApiSetting: isLocalVaultApiConfigured() ? upsertLocalVaultApiSetting : undefined
+  });
+}
+
+export async function deleteVaultSetting(key: VaultSettingKey): Promise<void> {
+  return deleteVaultSettingWithClients(key, {
+    deleteIndexedDbSetting,
+    deleteApiSetting: isLocalVaultApiConfigured() ? deleteLocalVaultApiSetting : undefined
   });
 }

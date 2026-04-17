@@ -169,3 +169,14 @@ export async function upsertLocalVaultApiSetting(key: string, value: unknown): P
     })
   });
 }
+
+export async function deleteLocalVaultApiSetting(key: string): Promise<void> {
+  const response = await fetch(`${requireLocalVaultApiBaseUrl()}/api/settings/${key}`, {
+    method: "DELETE",
+    cache: "no-store"
+  });
+
+  if (!response.ok && response.status !== 404) {
+    throw new Error(await parseResponseError(response));
+  }
+}

@@ -1,4 +1,4 @@
-import { getSetting } from "@/lib/storage/indexeddb";
+import { getVaultSetting } from "@/lib/vault/settings-repository";
 
 type IndexUpsertPayload = {
   record_id: string;
@@ -18,7 +18,7 @@ export type SemanticQueryResult = {
 };
 
 async function getAiApiBaseUrl(): Promise<string> {
-  const configuredBaseUrl = await getSetting<string>("ai_api_base_url");
+  const configuredBaseUrl = await getVaultSetting<string>("ai_api_base_url");
 
   if (!configuredBaseUrl?.trim()) {
     throw new Error("Set the Pi AI API URL before syncing the index.");

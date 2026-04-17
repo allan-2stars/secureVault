@@ -1,4 +1,4 @@
-import { exportVaultSnapshot, replaceVaultSnapshot, type VaultSnapshot } from "@/lib/storage/indexeddb";
+import { createVaultSnapshot, replaceVaultSnapshot, type VaultSnapshot } from "@/lib/vault/backup-repository";
 import { listStoredVaultRecords } from "@/lib/vault/records";
 import { queueUpsertJob } from "@/lib/vault/ai-jobs";
 
@@ -14,7 +14,7 @@ function ensureValidSnapshot(value: unknown): asserts value is VaultSnapshot {
 }
 
 export async function createBackupBlob(): Promise<Blob> {
-  const snapshot = await exportVaultSnapshot();
+  const snapshot = await createVaultSnapshot();
   return new Blob([JSON.stringify(snapshot, null, 2)], {
     type: "application/json"
   });
