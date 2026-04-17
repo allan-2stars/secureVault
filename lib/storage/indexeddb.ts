@@ -1,5 +1,5 @@
 const DATABASE_NAME = "securevault-ai";
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 
 const SETTINGS_STORE = "vault_settings";
 const RECORDS_STORE = "records";
@@ -9,6 +9,7 @@ type StoreName = typeof SETTINGS_STORE | typeof RECORDS_STORE | typeof JOBS_STOR
 type TransactionMode = IDBTransactionMode;
 
 export type VaultSettingKey =
+  | "ai_api_base_url"
   | "app_mode"
   | "encryption_version"
   | "password_salt"
@@ -40,7 +41,13 @@ export type VaultRecord = {
 export type VaultJob = {
   id: string;
   type: "index_upsert" | "index_delete";
-  payload: unknown;
+  payload: {
+    record_id: string;
+    ai_index_text?: string;
+    category?: string;
+    tags?: string[];
+    type?: string;
+  };
   status: "pending" | "running" | "failed";
   retry_count: number;
   last_attempt: string | null;
@@ -175,4 +182,85 @@ export async function deleteRecord(id: string): Promise<void> {
   await withStore(RECORDS_STORE, "readwrite", (store) => {
     store.delete(id);
   });
+}
+
+export async function getJob(id: string): Promise<VaultJob | null> {
+  return withStore(JOBS_STORE, "readonly", async (store) => {
+    const job = await requestToPromise(store.get(id) as IDBRequest<VaultJob | undefined>);
+    return job ?? null;
+  });
+}
+
+export async function getAllJobs(): Promise<VaultJob[]> {
+  return withStore(JOBS_STORE, "readonly", async (store) => {
+    const jobs = await requestToPromise(store.getAll() as IDBRequest<VaultJob[]>);
+    return jobs.sort((left, right) => left.retry_count - right.retry_count);
+  });
+}
+
+export async function putJob(job: VaultJob): Promise<void> {
+  await withStore(JOBS_STORE, "readwrite", (store) => {
+    store.put(job);
+  });
+}
+
+export async function deleteJob(id: string): Promise<void> {
+  await withStore(JOBS_STORE, "readwrite", (store) => {
+    store.delete(id);
+  });
+}
+
+export type VaultSnapshot = {
+  format: "securevault-backup-v1";
+  exported_at: string;
+  jobs: VaultJob[];
+  records: VaultRecord[];
+  settings: VaultSettingRecord[];
+};
+
+export async function exportVaultSnapshot(): Promise<VaultSnapshot> {
+  const [settingsMap, records, jobs] = await Promise.all([
+    getAllSettings(),
+    getAllRecords(),
+    getAllJobs()
+  ]);
+
+  const settings = Object.entries(settingsMap).map(([key, value]) => ({
+    key: key as VaultSettingKey,
+    value
+  }));
+
+  return {
+    format: "securevault-backup-v1",
+    exported_at: new Date().toISOString(),
+    settings,
+    records,
+    jobs
+  };
+}
+
+export async function replaceVaultSnapshot(snapshot: VaultSnapshot): Promise<void> {
+  const database = await openVaultDatabase();
+  const transaction = database.transaction([SETTINGS_STORE, RECORDS_STORE, JOBS_STORE], "readwrite");
+  const settingsStore = transaction.objectStore(SETTINGS_STORE);
+  const recordsStore = transaction.objectStore(RECORDS_STORE);
+  const jobsStore = transaction.objectStore(JOBS_STORE);
+
+  settingsStore.clear();
+  recordsStore.clear();
+  jobsStore.clear();
+
+  snapshot.settings.forEach((entry) => {
+    settingsStore.put(entry);
+  });
+
+  snapshot.records.forEach((record) => {
+    recordsStore.put(record);
+  });
+
+  snapshot.jobs.forEach((job) => {
+    jobsStore.put(job);
+  });
+
+  await transactionToPromise(transaction);
 }

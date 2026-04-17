@@ -4,7 +4,7 @@ Privacy-first, local-first secure vault web app with optional AI-assisted search
 
 ## Status
 
-Milestone 2 foundation is in place:
+Milestone 5 foundation is in place:
 
 - Next.js App Router shell
 - TypeScript project setup
@@ -12,6 +12,9 @@ Milestone 2 foundation is in place:
 - IndexedDB schema for vault settings, records, and jobs
 - browser-side AES-GCM key derivation and password verification
 - local setup and unlock flow for the master password
+- encrypted record CRUD with explicit reveal/hide
+- local keyword search over safe metadata only
+- Pi FastAPI AI sync with IndexedDB retry queue and non-blocking local saves
 
 ## Verification
 
@@ -25,6 +28,6 @@ The same verification now runs automatically on every push to `main` and every p
 
 ## Planned Next
 
-- CRUD and local keyword search
-- secret masking and reveal
+- semantic AI query UI and result ranking
+- Chroma/Pi failure fallback behavior in the search experience
 - backup and restore

@@ -2,10 +2,14 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+import { VaultBackup } from "@/components/vault-backup";
 import { ConnectionStatus } from "@/components/connection-status";
 import { VaultRecordForm } from "@/components/vault-record-form";
 import { VaultRecordList } from "@/components/vault-record-list";
 import { VaultSearch } from "@/components/vault-search";
+import { checkAiApiHealth, queryAiIndex } from "@/lib/vault/ai-client";
+import { createBackupBlob, restoreBackupFromText, requeueAllRecordsForIndexing } from "@/lib/vault/backup";
+import { processAiJobs, queueDeleteJob, queueUpsertJob } from "@/lib/vault/ai-jobs";
 import {
   createVaultRecord,
   getVaultRecordEditorValues,
@@ -17,8 +21,9 @@ import {
   type VaultRecordSecrets,
   type VaultRecordSummary
 } from "@/lib/vault/records";
-import { filterRecordsByKeyword } from "@/lib/vault/search";
+import { filterRecordsByKeyword, rankSemanticResults } from "@/lib/vault/search";
 import { getVaultBootstrapState, initializeVault, unlockVault } from "@/lib/vault/settings";
+import { getAllJobs, getSetting, setSetting } from "@/lib/storage/indexeddb";
 
 type VaultStatus = "loading" | "setup" | "locked" | "ready" | "unavailable";
 
@@ -59,13 +64,44 @@ export function VaultConsole() {
   const [revealedSecrets, setRevealedSecrets] = useState<Partial<Record<string, VaultRecordSecrets>>>({});
   const [revealInFlightId, setRevealInFlightId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [aiApiBaseUrl, setAiApiBaseUrl] = useState("");
+  const [pendingJobCount, setPendingJobCount] = useState(0);
+  const [isAiSyncRunning, setIsAiSyncRunning] = useState(false);
+  const [aiStatusMessage, setAiStatusMessage] = useState<string | null>(null);
+  const [isSemanticMode, setIsSemanticMode] = useState(false);
+  const [semanticResults, setSemanticResults] = useState<VaultRecordSummary[] | null>(null);
+  const [semanticSearchInFlight, setSemanticSearchInFlight] = useState(false);
+  const [semanticStatusMessage, setSemanticStatusMessage] = useState<string | null>(null);
+  const [backupInFlight, setBackupInFlight] = useState(false);
+  const [restoreInFlight, setRestoreInFlight] = useState(false);
 
   const refreshRecords = async () => {
     const nextRecords = await listVaultRecords();
     setRecords(nextRecords);
   };
 
-  const visibleRecords = filterRecordsByKeyword(records, searchQuery);
+  const refreshJobCount = async () => {
+    const jobs = await getAllJobs();
+    setPendingJobCount(jobs.length);
+  };
+
+  const runAiSync = async () => {
+    if (isAiSyncRunning) {
+      return;
+    }
+
+    setIsAiSyncRunning(true);
+
+    try {
+      await processAiJobs();
+      await Promise.all([refreshRecords(), refreshJobCount()]);
+    } finally {
+      setIsAiSyncRunning(false);
+    }
+  };
+
+  const keywordResults = filterRecordsByKeyword(records, searchQuery);
+  const visibleRecords = isSemanticMode ? semanticResults ?? keywordResults : keywordResults;
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +117,9 @@ export function VaultConsole() {
         setEncryptionVersion(bootstrap.encryptionVersion);
         setAppMode(bootstrap.mode);
         setStatus(bootstrap.initialized ? "locked" : "setup");
+        setAiApiBaseUrl((await getSetting<string>("ai_api_base_url")) ?? "");
+        await refreshJobCount();
+        await refreshRecords();
       } catch (error) {
         if (cancelled) {
           return;
@@ -154,11 +193,13 @@ export function VaultConsole() {
 
   const handleLock = () => {
     setSessionKey(null);
-      setRecordBeingEdited(null);
-      setRevealedSecrets({});
-      setFeedback("Vault locked. Your session key has been cleared from memory.");
-      setSearchQuery("");
-      setStatus("locked");
+    setRecordBeingEdited(null);
+    setRevealedSecrets({});
+    setFeedback("Vault locked. Your session key has been cleared from memory.");
+    setSearchQuery("");
+    setSemanticResults(null);
+    setSemanticStatusMessage(null);
+    setStatus("locked");
   };
 
   useEffect(() => {
@@ -167,7 +208,16 @@ export function VaultConsole() {
     }
 
     void refreshRecords();
+    void refreshJobCount();
+    void runAiSync();
   }, [sessionKey, status]);
+
+  useEffect(() => {
+    if (!isSemanticMode) {
+      setSemanticResults(null);
+      setSemanticStatusMessage(null);
+    }
+  }, [isSemanticMode]);
 
   const handleRecordSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -197,6 +247,7 @@ export function VaultConsole() {
     try {
       if (recordBeingEdited) {
         const updatedRecord = await updateVaultRecord(recordBeingEdited.id, values, sessionKey);
+        await queueUpsertJob(updatedRecord);
         setRecords((current) =>
           sortRecordsByUpdatedAt(
             current.map((record) => (record.id === updatedRecord.id ? updatedRecord : record))
@@ -205,6 +256,7 @@ export function VaultConsole() {
         setFeedback("Record updated locally.");
       } else {
         const createdRecord = await createVaultRecord(values, sessionKey);
+        await queueUpsertJob(createdRecord);
         setRecords((current) => sortRecordsByUpdatedAt([createdRecord, ...current]));
         setFeedback("Record saved locally.");
       }
@@ -212,6 +264,9 @@ export function VaultConsole() {
       setRecordBeingEdited(null);
       setRevealedSecrets({});
       form.reset();
+      await refreshJobCount();
+      setSemanticResults(null);
+      void runAiSync();
     } catch (error) {
       setFeedback(getErrorMessage(error));
     } finally {
@@ -236,7 +291,9 @@ export function VaultConsole() {
 
   const handleDeleteRecord = async (id: string) => {
     try {
+      await queueDeleteJob(id);
       await removeVaultRecord(id);
+      setRecords((current) => current.filter((record) => record.id !== id));
       setRevealedSecrets((current) => {
         const next = { ...current };
         delete next[id];
@@ -245,7 +302,9 @@ export function VaultConsole() {
       if (recordBeingEdited?.id === id) {
         setRecordBeingEdited(null);
       }
-      await refreshRecords();
+      await refreshJobCount();
+      setSemanticResults((current) => current?.filter((record) => record.id !== id) ?? null);
+      void runAiSync();
       setFeedback("Record deleted locally.");
     } catch (error) {
       setFeedback(getErrorMessage(error));
@@ -279,6 +338,105 @@ export function VaultConsole() {
     }
   };
 
+  const handleAiEndpointSave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAiStatusMessage(null);
+
+    const formData = new FormData(event.currentTarget);
+    const nextUrl = String(formData.get("ai_api_base_url") ?? "").trim();
+
+    try {
+      await setSetting("ai_api_base_url", nextUrl);
+      setAiApiBaseUrl(nextUrl);
+      setAiStatusMessage("Pi AI API URL saved locally.");
+    } catch (error) {
+      setAiStatusMessage(getErrorMessage(error));
+    }
+  };
+
+  const handleAiHealthCheck = async () => {
+    setAiStatusMessage(null);
+
+    try {
+      await checkAiApiHealth();
+      setAiStatusMessage("Pi AI API is reachable.");
+    } catch (error) {
+      setAiStatusMessage(getErrorMessage(error));
+    }
+  };
+
+  const handleSemanticSearch = async () => {
+    if (!searchQuery.trim()) {
+      setSemanticResults(keywordResults);
+      setSemanticStatusMessage("Enter a query to run semantic search.");
+      return;
+    }
+
+    setSemanticSearchInFlight(true);
+    setSemanticStatusMessage(null);
+
+    try {
+      const aiResults = await queryAiIndex(searchQuery, 10);
+      const ranked = rankSemanticResults(records, aiResults, searchQuery);
+
+      if (ranked.length === 0) {
+        setSemanticResults(keywordResults);
+        setSemanticStatusMessage("No semantic matches found. Showing local keyword results instead.");
+      } else {
+        setSemanticResults(ranked);
+        setSemanticStatusMessage(`Showing ${ranked.length} semantic matches from the Pi AI index.`);
+      }
+    } catch (error) {
+      setSemanticResults(keywordResults);
+      setSemanticStatusMessage(`${getErrorMessage(error)} Falling back to local keyword results.`);
+    } finally {
+      setSemanticSearchInFlight(false);
+    }
+  };
+
+  const handleBackupExport = async () => {
+    setBackupInFlight(true);
+
+    try {
+      const blob = await createBackupBlob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `securevault-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+      setFeedback("Backup exported.");
+    } catch (error) {
+      setFeedback(getErrorMessage(error));
+    } finally {
+      setBackupInFlight(false);
+    }
+  };
+
+  const handleBackupImport = async (file: File) => {
+    setRestoreInFlight(true);
+
+    try {
+      const text = await file.text();
+      await restoreBackupFromText(text);
+      await Promise.all([refreshRecords(), refreshJobCount()]);
+      await requeueAllRecordsForIndexing();
+      await refreshJobCount();
+      setSessionKey(null);
+      setRecordBeingEdited(null);
+      setRevealedSecrets({});
+      setSearchQuery("");
+      setSemanticResults(null);
+      setSemanticStatusMessage(null);
+      setStatus("locked");
+      setFeedback("Backup restored. The vault has been locked and all records were queued for reindex.");
+    } catch (error) {
+      setFeedback(getErrorMessage(error));
+    } finally {
+      setRestoreInFlight(false);
+    }
+  };
+
   return (
     <main className="shell">
       <header className="app-header">
@@ -286,7 +444,7 @@ export function VaultConsole() {
           <div className="brand-mark">SV</div>
           <div className="brand-copy">
             <strong>SecureVault AI</strong>
-            <span>Milestone 2: storage, crypto, and master password</span>
+            <span>Milestone 5: AI sync and retry queue</span>
           </div>
         </div>
         <ConnectionStatus />
@@ -422,21 +580,79 @@ export function VaultConsole() {
               </div>
             </article>
             <article className="card">
-              <h2>Milestone 2 delivered</h2>
+              <h2>AI sync status</h2>
+              <ul>
+                <li>{pendingJobCount} AI sync jobs currently queued.</li>
+                <li>{isAiSyncRunning ? "Background sync is running." : "Background sync is idle."}</li>
+                <li>Local saves do not wait for Pi AI sync to succeed.</li>
+              </ul>
+            </article>
+          </section>
+
+          <section className="grid grid-two vault-panel">
+            <article className="card">
+              <h2>Pi AI endpoint</h2>
+              <p>
+                Only the Pi FastAPI wrapper is used for AI sync. The browser never calls
+                Chroma directly.
+              </p>
+              <form className="vault-form" onSubmit={handleAiEndpointSave}>
+                <label>
+                  FastAPI base URL
+                  <input
+                    name="ai_api_base_url"
+                    onChange={(event) => setAiApiBaseUrl(event.target.value)}
+                    placeholder="http://192.168.x.x:9000"
+                    type="url"
+                    value={aiApiBaseUrl}
+                  />
+                </label>
+                <div className="hero-actions">
+                  <button className="button button-primary" type="submit">
+                    Save endpoint
+                  </button>
+                  <button className="button button-secondary" onClick={handleAiHealthCheck} type="button">
+                    Check health
+                  </button>
+                  <button className="button button-secondary" onClick={() => void runAiSync()} type="button">
+                    Retry queued sync
+                  </button>
+                </div>
+              </form>
+              {aiStatusMessage ? <p className="feedback">{aiStatusMessage}</p> : null}
+            </article>
+            <article className="card">
+              <h2>Guardrails</h2>
               <ul>
                 {readyHighlights.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
+                <li>Only `record_id`, `ai_index_text`, `type`, `category`, and `tags` leave the browser.</li>
+                <li>Failed upsert or delete requests stay queued in IndexedDB for retry.</li>
               </ul>
             </article>
           </section>
 
           <section className="grid">
             <VaultSearch
+              isSemanticMode={isSemanticMode}
               matchCount={visibleRecords.length}
               onChange={setSearchQuery}
+              onSemanticModeChange={setIsSemanticMode}
+              onSemanticSearch={handleSemanticSearch}
               query={searchQuery}
+              semanticInFlight={semanticSearchInFlight}
+              semanticStatusMessage={semanticStatusMessage}
               totalCount={records.length}
+            />
+          </section>
+
+          <section className="grid">
+            <VaultBackup
+              backupInFlight={backupInFlight}
+              importInFlight={restoreInFlight}
+              onBackup={handleBackupExport}
+              onImport={handleBackupImport}
             />
           </section>
 
