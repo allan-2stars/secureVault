@@ -1,5 +1,5 @@
 import { exportVaultSnapshot, replaceVaultSnapshot, type VaultSnapshot } from "@/lib/storage/indexeddb";
-import { listVaultRecords } from "@/lib/vault/records";
+import { listStoredVaultRecords } from "@/lib/vault/records";
 import { queueUpsertJob } from "@/lib/vault/ai-jobs";
 
 function ensureValidSnapshot(value: unknown): asserts value is VaultSnapshot {
@@ -30,7 +30,7 @@ export async function restoreBackupFromText(text: string): Promise<void> {
 }
 
 export async function requeueAllRecordsForIndexing(): Promise<void> {
-  const records = await listVaultRecords();
+  const records = await listStoredVaultRecords();
 
   for (const record of records) {
     await queueUpsertJob({

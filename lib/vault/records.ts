@@ -1,6 +1,12 @@
 import { decryptString, encryptString } from "@/lib/crypto/vault-crypto";
+import { getAllRecords, deleteRecord, putRecord, type VaultRecord } from "@/lib/storage/indexeddb";
 import { createAccountHint } from "@/lib/vault/account";
-import { deleteRecord, getAllRecords, getRecord, putRecord, type VaultRecord } from "@/lib/storage/indexeddb";
+import {
+  getVaultRecordForRead,
+  listVaultRecordsForRead,
+  mirrorRecordDelete,
+  mirrorRecordUpsert
+} from "@/lib/vault/record-repository";
 
 export type VaultRecordFormValues = {
   account: string;
@@ -57,7 +63,7 @@ function validateRecord(values: VaultRecordFormValues) {
 
 async function ensureUniqueTitle(title: string, excludeId?: string) {
   const normalizedTitle = title.trim().toLocaleLowerCase();
-  const existingRecords = await getAllRecords();
+  const existingRecords = await listVaultRecordsForRead();
   const duplicate = existingRecords.find((record) => {
     if (excludeId && record.id === excludeId) {
       return false;
@@ -120,6 +126,11 @@ function toSummary(record: VaultRecord): VaultRecordSummary {
 }
 
 export async function listVaultRecords(): Promise<VaultRecordSummary[]> {
+  const records = await listVaultRecordsForRead();
+  return records.map(toSummary);
+}
+
+export async function listStoredVaultRecords(): Promise<VaultRecordSummary[]> {
   const records = await getAllRecords();
   return records.map(toSummary);
 }
@@ -131,6 +142,7 @@ export async function createVaultRecord(
   await ensureUniqueTitle(values.title);
   const record = await encryptRecord(values, key);
   await putRecord(record);
+  void mirrorRecordUpsert(record);
   return toSummary(record);
 }
 
@@ -139,7 +151,7 @@ export async function updateVaultRecord(
   values: VaultRecordFormValues,
   key: CryptoKey
 ): Promise<VaultRecordSummary> {
-  const existingRecord = await getRecord(id);
+  const existingRecord = await getVaultRecordForRead(id);
 
   if (!existingRecord) {
     throw new Error("Record not found.");
@@ -154,18 +166,20 @@ export async function updateVaultRecord(
   };
 
   await putRecord(savedRecord);
+  void mirrorRecordUpsert(savedRecord);
   return toSummary(savedRecord);
 }
 
 export async function removeVaultRecord(id: string): Promise<void> {
   await deleteRecord(id);
+  void mirrorRecordDelete(id);
 }
 
 export async function revealVaultRecordSecrets(
   id: string,
   key: CryptoKey
 ): Promise<VaultRecordSecrets> {
-  const record = await getRecord(id);
+  const record = await getVaultRecordForRead(id);
 
   if (!record) {
     throw new Error("Record not found.");
@@ -184,7 +198,7 @@ export async function getVaultRecordEditorValues(
   id: string,
   key: CryptoKey
 ): Promise<VaultRecordEditorValues> {
-  const record = await getRecord(id);
+  const record = await getVaultRecordForRead(id);
 
   if (!record) {
     throw new Error("Record not found.");

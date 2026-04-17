@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:unit": "node --import tsx --test tests/record-repository.test.ts"
   },
   "dependencies": {
     "next": "^15.0.0",
@@ -22,6 +23,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.0.0"
   }
 }
