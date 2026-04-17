@@ -22,8 +22,9 @@ import {
   type VaultRecordSummary
 } from "@/lib/vault/records";
 import { filterRecordsByKeyword, rankSemanticResults } from "@/lib/vault/search";
+import { listVaultJobs } from "@/lib/vault/job-repository";
 import { getVaultBootstrapState, initializeVault, unlockVault } from "@/lib/vault/settings";
-import { getAllJobs, getSetting, setSetting } from "@/lib/storage/indexeddb";
+import { getSetting, setSetting } from "@/lib/storage/indexeddb";
 
 type VaultStatus = "loading" | "setup" | "locked" | "ready" | "unavailable";
 
@@ -94,7 +95,7 @@ export function VaultConsole() {
 
   const refreshJobCount = async () => {
     // Count queued AI sync jobs so the UI can show the current background-sync workload.
-    const jobs = await getAllJobs();
+    const jobs = await listVaultJobs();
     setPendingJobCount(jobs.length);
   };
 

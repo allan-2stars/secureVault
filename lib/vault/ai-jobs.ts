@@ -1,11 +1,7 @@
 import { deleteAiIndex, upsertAiIndex } from "@/lib/vault/ai-client";
 import { buildAiIndexText } from "@/lib/vault/ai-index";
-import {
-  deleteJob,
-  getAllJobs,
-  putJob,
-  type VaultJob,
-} from "@/lib/storage/indexeddb";
+import { type VaultJob } from "@/lib/storage/indexeddb";
+import { deleteVaultJob, listVaultJobs, saveVaultJob } from "@/lib/vault/job-repository";
 import { syncRecordIndexStatus } from "@/lib/vault/record-repository";
 import type { VaultRecordSummary } from "@/lib/vault/records";
 
@@ -18,7 +14,7 @@ function nowIso() {
 }
 
 async function persistJob(job: VaultJob) {
-  await putJob(job);
+  await saveVaultJob(job);
 }
 
 export async function queueUpsertJob(record: VaultRecordSummary): Promise<void> {
@@ -78,14 +74,14 @@ async function runJob(job: VaultJob): Promise<void> {
     });
 
     await syncRecordIndexStatus(record_id, "synced");
-    await deleteJob(job.id);
+    await deleteVaultJob(job.id);
     return;
   }
 
   await deleteAiIndex({
     record_id: job.payload.record_id
   });
-  await deleteJob(job.id);
+  await deleteVaultJob(job.id);
 }
 
 async function failJob(job: VaultJob): Promise<void> {
@@ -102,7 +98,7 @@ async function failJob(job: VaultJob): Promise<void> {
 }
 
 export async function processAiJobs(): Promise<void> {
-  const jobs = await getAllJobs();
+  const jobs = await listVaultJobs();
 
   for (const job of jobs) {
     try {

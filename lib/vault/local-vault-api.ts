@@ -16,6 +16,29 @@ export type LocalVaultApiRecord = {
   updated_at: string;
 };
 
+export type LocalVaultApiJob = {
+  id: string;
+  type: "index_upsert" | "index_delete";
+  status: "pending" | "running" | "failed";
+  payload: {
+    record_id: string;
+    ai_index_text?: string | null;
+    category?: string | null;
+    tags?: string[] | null;
+    type?: string | null;
+  };
+  retry_count: number;
+  last_attempt: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LocalVaultApiSetting = {
+  key: string;
+  value: unknown;
+  updated_at: string;
+};
+
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, "");
 }
@@ -99,4 +122,50 @@ export async function deleteLocalVaultApiRecord(id: string): Promise<void> {
   if (!response.ok && response.status !== 404) {
     throw new Error(await parseResponseError(response));
   }
+}
+
+export async function listLocalVaultApiJobs(): Promise<LocalVaultApiJob[]> {
+  return requestJson<LocalVaultApiJob[]>("/api/jobs", {
+    method: "GET"
+  });
+}
+
+export async function upsertLocalVaultApiJob(job: Omit<LocalVaultApiJob, "created_at" | "updated_at">): Promise<LocalVaultApiJob> {
+  return requestJson<LocalVaultApiJob>("/api/jobs", {
+    method: "POST",
+    body: JSON.stringify(job)
+  });
+}
+
+export async function deleteLocalVaultApiJob(id: string): Promise<void> {
+  const response = await fetch(`${requireLocalVaultApiBaseUrl()}/api/jobs/${id}`, {
+    method: "DELETE",
+    cache: "no-store"
+  });
+
+  if (!response.ok && response.status !== 404) {
+    throw new Error(await parseResponseError(response));
+  }
+}
+
+export async function listLocalVaultApiSettings(): Promise<LocalVaultApiSetting[]> {
+  return requestJson<LocalVaultApiSetting[]>("/api/settings", {
+    method: "GET"
+  });
+}
+
+export async function getLocalVaultApiSetting(key: string): Promise<LocalVaultApiSetting> {
+  return requestJson<LocalVaultApiSetting>(`/api/settings/${key}`, {
+    method: "GET"
+  });
+}
+
+export async function upsertLocalVaultApiSetting(key: string, value: unknown): Promise<LocalVaultApiSetting> {
+  return requestJson<LocalVaultApiSetting>("/api/settings", {
+    method: "POST",
+    body: JSON.stringify({
+      key,
+      value
+    })
+  });
 }

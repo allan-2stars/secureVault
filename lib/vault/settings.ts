@@ -5,7 +5,7 @@ import {
   generateSalt,
   verifyPasswordVerifier
 } from "@/lib/crypto/vault-crypto";
-import { getAllSettings, setSettings } from "@/lib/storage/indexeddb";
+import { getAllVaultSettings, setVaultSettings } from "@/lib/vault/settings-repository";
 
 type VaultBootstrapState = {
   encryptionVersion: string | null;
@@ -14,7 +14,7 @@ type VaultBootstrapState = {
 };
 
 export async function getVaultBootstrapState(): Promise<VaultBootstrapState> {
-  const settings = await getAllSettings();
+  const settings = await getAllVaultSettings();
 
   return {
     initialized: settings.vault_initialized === true,
@@ -25,6 +25,12 @@ export async function getVaultBootstrapState(): Promise<VaultBootstrapState> {
 }
 
 export async function initializeVault(password: string): Promise<CryptoKey> {
+  const existingSettings = await getAllVaultSettings();
+
+  if (existingSettings.vault_initialized === true) {
+    throw new Error("A vault already exists. Unlock it with the current master password.");
+  }
+
   const normalizedPassword = password.trim();
 
   if (normalizedPassword.length < 12) {
@@ -35,7 +41,7 @@ export async function initializeVault(password: string): Promise<CryptoKey> {
   const key = await deriveMasterKey(normalizedPassword, salt);
   const passwordVerifier = await createPasswordVerifier(key);
 
-  await setSettings([
+  await setVaultSettings([
     { key: "vault_initialized", value: true },
     { key: "password_salt", value: salt },
     { key: "password_verifier", value: passwordVerifier },
@@ -47,12 +53,12 @@ export async function initializeVault(password: string): Promise<CryptoKey> {
 }
 
 export async function unlockVault(password: string): Promise<CryptoKey> {
-  const settings = await getAllSettings();
+  const settings = await getAllVaultSettings();
   const salt = settings.password_salt;
   const serializedVerifier = settings.password_verifier;
 
   if (typeof salt !== "string" || typeof serializedVerifier !== "string") {
-    throw new Error("Vault settings are incomplete. Recreate the vault to continue.");
+    throw new Error("Vault settings are incomplete or unavailable. Unlock cannot continue.");
   }
 
   const key = await deriveMasterKey(password, salt);

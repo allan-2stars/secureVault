@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:unit": "node --import tsx --test tests/record-repository.test.ts"
+    "test:unit": "node --import tsx --test tests/record-repository.test.ts tests/job-repository.test.ts tests/settings-repository.test.ts"
   },
   "dependencies": {
     "next": "^15.0.0",

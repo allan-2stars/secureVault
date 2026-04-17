@@ -16,8 +16,11 @@ This service is intended to become the future durable local storage boundary for
 ## Run later
 
 ```bash
+LOCAL_VAULT_ALLOW_ORIGINS=http://localhost:3000,http://127.0.0.1:3000 \
 uvicorn app.main:app --host 127.0.0.1 --port 9100
 ```
+
+If your frontend runs on a different origin, add that exact origin to `LOCAL_VAULT_ALLOW_ORIGINS`.
 
 ## Smoke check
 
