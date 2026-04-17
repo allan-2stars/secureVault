@@ -259,6 +259,8 @@ Frontend ← search results ← Pi
 |Metadata|partially stored|
 |AI Index|stored or embedded|
 
+update:
+IndexedDB is acceptable for MVP prototyping only and must not be treated as the long-term durable storage layer. A future architecture revision should migrate persistent vault storage to a local database such as SQLite, while keeping the browser layer focused on UI and transient session state.
 ---
 
 ### AI Behavior

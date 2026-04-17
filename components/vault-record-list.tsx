@@ -21,6 +21,7 @@ export function VaultRecordList({
 }: VaultRecordListProps) {
   return (
     <article className="card">
+      {/* This list displays the records that are currently visible after search/filtering. */}
       <h2>Stored records</h2>
       <p>Secrets remain hidden until you explicitly reveal a record while unlocked.</p>
       {records.length === 0 ? (
@@ -28,6 +29,7 @@ export function VaultRecordList({
       ) : (
         <div className="record-list">
           {records.map((record) => {
+            // If this record has already been revealed, its decrypted values are stored here temporarily in memory.
             const revealed = revealedSecrets[record.id];
 
             return (
@@ -42,12 +44,14 @@ export function VaultRecordList({
                     </p>
                   </div>
                   <div className="record-actions">
+                    {/* Edit loads the record back into the form. */}
                     <button className="button button-secondary" onClick={() => void onEdit(record.id)} type="button">
                       Edit
                     </button>
                     <button
                       className="button button-secondary"
                       disabled={revealInFlightId === record.id}
+                      // Reveal/Hide toggles whether decrypted secrets are shown for this one record.
                       onClick={() => void onToggleReveal(record.id)}
                       type="button"
                     >
@@ -57,6 +61,7 @@ export function VaultRecordList({
                           ? "Hide"
                           : "Reveal"}
                     </button>
+                    {/* Delete removes the record locally and queues AI index deletion separately. */}
                     <button className="button button-secondary" onClick={() => void onDelete(record.id)} type="button">
                       Delete
                     </button>
@@ -66,6 +71,7 @@ export function VaultRecordList({
                 <div className="record-grid">
                   <div>
                     <strong>Account</strong>
+                    {/* Hidden view uses only the safe masked hint until the user explicitly reveals the record. */}
                     <p>{revealed?.account || record.account_hint || "Hidden"}</p>
                   </div>
                   <div>

@@ -1,6 +1,8 @@
 import type { VaultRecordSummary } from "@/lib/vault/records";
 import type { SemanticQueryResult } from "@/lib/vault/ai-client";
 
+const MIN_SEMANTIC_SCORE = 0.15;
+
 function normalize(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
@@ -68,9 +70,15 @@ export function rankSemanticResults(
         return null;
       }
 
+      const boostedScore = result.score + keywordMatchScore(record, query) * 0.05;
+
+      if (boostedScore < MIN_SEMANTIC_SCORE) {
+        return null;
+      }
+
       return {
         record,
-        rankScore: result.score + keywordMatchScore(record, query) * 0.05
+        rankScore: boostedScore
       };
     })
     .filter((item): item is { rankScore: number; record: VaultRecordSummary } => Boolean(item))

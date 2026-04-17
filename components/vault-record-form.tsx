@@ -17,7 +17,9 @@ export function VaultRecordForm({
   onCancelEdit,
   onSubmit
 }: VaultRecordFormProps) {
+  // If initialValues exists, we are editing an existing record instead of creating a new one.
   const isEditing = Boolean(initialValues);
+  // This controls whether the password field is shown as plain text or masked.
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   return (
@@ -29,6 +31,8 @@ export function VaultRecordForm({
       </p>
       <form
         className="vault-form"
+        // Changing the key forces the form to remount when a different record is selected.
+        // That makes defaultValue fields refresh correctly for edit mode.
         key={initialValues?.id ?? "new-record"}
         onSubmit={(event) => void onSubmit(event)}
       >
@@ -81,6 +85,7 @@ export function VaultRecordForm({
                 autoComplete="current-password"
                 defaultValue={initialValues?.password ?? ""}
                 name="password"
+                // Toggle between visible text and masked password while typing.
                 type={isPasswordVisible ? "text" : "password"}
               />
               <button
@@ -123,10 +128,12 @@ export function VaultRecordForm({
         </div>
 
         <div className="hero-actions">
+          {/* The main submit button handles both create and edit flows. */}
           <button className="button button-primary" disabled={isSubmitting} type="submit">
             {isSubmitting ? "Saving..." : isEditing ? "Save changes" : "Create record"}
           </button>
           {isEditing ? (
+            // Cancel only appears in edit mode so the user can go back to "create" mode.
             <button className="button button-secondary" onClick={onCancelEdit} type="button">
               Cancel edit
             </button>

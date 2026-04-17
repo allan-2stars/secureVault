@@ -52,40 +52,54 @@ function getErrorMessage(error: unknown) {
 }
 
 export function VaultConsole() {
+  // High-level screen state: whether the vault is setting up, locked, ready, etc.
   const [status, setStatus] = useState<VaultStatus>("loading");
+  // These values come from local vault settings and help explain the current vault state in the UI.
   const [encryptionVersion, setEncryptionVersion] = useState<string | null>(null);
   const [appMode, setAppMode] = useState<string | null>(null);
+  // feedback is for general user-facing messages like "saved", "restored", or errors.
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // The derived CryptoKey is kept only in memory for the unlocked session.
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
+  // The main local view of the record list.
   const [records, setRecords] = useState<VaultRecordSummary[]>([]);
   const [recordSubmitInFlight, setRecordSubmitInFlight] = useState(false);
+  // If this is set, the form is editing an existing record instead of creating a new one.
   const [recordBeingEdited, setRecordBeingEdited] = useState<VaultRecordEditorValues | null>(null);
+  // Revealed secrets are stored temporarily in memory per record after explicit reveal.
   const [revealedSecrets, setRevealedSecrets] = useState<Partial<Record<string, VaultRecordSecrets>>>({});
   const [revealInFlightId, setRevealInFlightId] = useState<string | null>(null);
+  // Search UI state.
   const [searchQuery, setSearchQuery] = useState("");
+  // Pi wrapper connection settings and queue status.
   const [aiApiBaseUrl, setAiApiBaseUrl] = useState("");
   const [pendingJobCount, setPendingJobCount] = useState(0);
   const [isAiSyncRunning, setIsAiSyncRunning] = useState(false);
   const [aiStatusMessage, setAiStatusMessage] = useState<string | null>(null);
+  // Semantic search state is kept separate from keyword search so we can fall back cleanly.
   const [isSemanticMode, setIsSemanticMode] = useState(false);
   const [semanticResults, setSemanticResults] = useState<VaultRecordSummary[] | null>(null);
   const [semanticSearchInFlight, setSemanticSearchInFlight] = useState(false);
   const [semanticStatusMessage, setSemanticStatusMessage] = useState<string | null>(null);
+  // Backup/restore progress flags.
   const [backupInFlight, setBackupInFlight] = useState(false);
   const [restoreInFlight, setRestoreInFlight] = useState(false);
 
   const refreshRecords = async () => {
+    // Reload the visible record summaries from local storage.
     const nextRecords = await listVaultRecords();
     setRecords(nextRecords);
   };
 
   const refreshJobCount = async () => {
+    // Count queued AI sync jobs so the UI can show the current background-sync workload.
     const jobs = await getAllJobs();
     setPendingJobCount(jobs.length);
   };
 
   const runAiSync = async () => {
+    // Avoid starting a second queue processor while one is already running.
     if (isAiSyncRunning) {
       return;
     }
@@ -93,6 +107,7 @@ export function VaultConsole() {
     setIsAiSyncRunning(true);
 
     try {
+      // Process queued AI sync jobs, then refresh the UI so index status stays current.
       await processAiJobs();
       await Promise.all([refreshRecords(), refreshJobCount()]);
     } finally {
@@ -100,14 +115,22 @@ export function VaultConsole() {
     }
   };
 
+  // Keyword results are always available locally.
   const keywordResults = filterRecordsByKeyword(records, searchQuery);
+  // In semantic mode, prefer semantic results if available; otherwise fall back to keyword results.
   const visibleRecords = isSemanticMode ? semanticResults ?? keywordResults : keywordResults;
+  const searchMatchLabel = !searchQuery.trim()
+    ? `${records.length} records available for local search.`
+    : isSemanticMode
+      ? `${visibleRecords.length} semantic results shown from ${records.length} local records.`
+      : `${visibleRecords.length} of ${records.length} records match this query.`;
 
   useEffect(() => {
     let cancelled = false;
 
     const loadState = async () => {
       try {
+        // Read vault/bootstrap settings from local storage when the screen first loads.
         const bootstrap = await getVaultBootstrapState();
 
         if (cancelled) {
@@ -133,6 +156,7 @@ export function VaultConsole() {
     void loadState();
 
     return () => {
+      // Prevent state updates if the component unmounts before async work finishes.
       cancelled = true;
     };
   }, []);
@@ -146,6 +170,7 @@ export function VaultConsole() {
     const password = String(formData.get("password") ?? "");
     const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
+    // Basic client-side confirmation before deriving and storing vault settings.
     if (password !== confirmPassword) {
       setFeedback("The master password confirmation does not match.");
       return;
@@ -179,6 +204,7 @@ export function VaultConsole() {
     setIsSubmitting(true);
 
     try {
+      // Unlock derives the key locally and verifies it against the encrypted verifier.
       const key = await unlockVault(password);
       setSessionKey(key);
       setStatus("ready");
@@ -192,6 +218,7 @@ export function VaultConsole() {
   };
 
   const handleLock = () => {
+    // Locking clears only in-memory/session UI state. The actual stored vault data remains local.
     setSessionKey(null);
     setRecordBeingEdited(null);
     setRevealedSecrets({});
@@ -207,12 +234,14 @@ export function VaultConsole() {
       return;
     }
 
+    // Once unlocked, refresh records and queued jobs, then try to process any pending AI sync work.
     void refreshRecords();
     void refreshJobCount();
     void runAiSync();
   }, [sessionKey, status]);
 
   useEffect(() => {
+    // Leaving semantic mode clears semantic-only state so the UI goes back to pure local keyword behavior.
     if (!isSemanticMode) {
       setSemanticResults(null);
       setSemanticStatusMessage(null);
@@ -232,6 +261,7 @@ export function VaultConsole() {
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+    // Read plain form values first; secret fields are encrypted later inside the record service.
     const values = {
       title: String(formData.get("title") ?? ""),
       type: String(formData.get("type") ?? ""),
@@ -246,6 +276,7 @@ export function VaultConsole() {
 
     try {
       if (recordBeingEdited) {
+        // Update the record locally first, then queue the AI sync separately.
         const updatedRecord = await updateVaultRecord(recordBeingEdited.id, values, sessionKey);
         await queueUpsertJob(updatedRecord);
         setRecords((current) =>
@@ -255,6 +286,7 @@ export function VaultConsole() {
         );
         setFeedback("Record updated locally.");
       } else {
+        // Create the record locally first, then queue indexing in the background.
         const createdRecord = await createVaultRecord(values, sessionKey);
         await queueUpsertJob(createdRecord);
         setRecords((current) => sortRecordsByUpdatedAt([createdRecord, ...current]));
@@ -265,6 +297,7 @@ export function VaultConsole() {
       setRevealedSecrets({});
       form.reset();
       await refreshJobCount();
+      // Clear stale semantic results because the underlying records changed.
       setSemanticResults(null);
       void runAiSync();
     } catch (error) {
@@ -281,6 +314,7 @@ export function VaultConsole() {
     }
 
     try {
+      // Load the full decrypted values so the form can be populated for editing.
       const editorValues = await getVaultRecordEditorValues(id, sessionKey);
       setRecordBeingEdited(editorValues);
       setFeedback("Editing record locally.");
@@ -291,6 +325,7 @@ export function VaultConsole() {
 
   const handleDeleteRecord = async (id: string) => {
     try {
+      // Queue AI index deletion, but do not wait for that network call before removing the local record.
       await queueDeleteJob(id);
       await removeVaultRecord(id);
       setRecords((current) => current.filter((record) => record.id !== id));
@@ -318,6 +353,7 @@ export function VaultConsole() {
     }
 
     if (revealedSecrets[id]) {
+      // Hide simply removes the decrypted values from in-memory UI state.
       setRevealedSecrets((current) => {
         const next = { ...current };
         delete next[id];
@@ -329,6 +365,7 @@ export function VaultConsole() {
     setRevealInFlightId(id);
 
     try {
+      // Reveal decrypts only this one record's secret fields on demand.
       const secrets = await revealVaultRecordSecrets(id, sessionKey);
       setRevealedSecrets((current) => ({ ...current, [id]: secrets }));
     } catch (error) {
@@ -346,6 +383,7 @@ export function VaultConsole() {
     const nextUrl = String(formData.get("ai_api_base_url") ?? "").trim();
 
     try {
+      // Save the Pi wrapper base URL locally so the browser knows where to send AI requests.
       await setSetting("ai_api_base_url", nextUrl);
       setAiApiBaseUrl(nextUrl);
       setAiStatusMessage("Pi AI API URL saved locally.");
@@ -358,6 +396,7 @@ export function VaultConsole() {
     setAiStatusMessage(null);
 
     try {
+      // This verifies the browser can reach the Pi wrapper from the current origin.
       await checkAiApiHealth();
       setAiStatusMessage("Pi AI API is reachable.");
     } catch (error) {
@@ -376,10 +415,12 @@ export function VaultConsole() {
     setSemanticStatusMessage(null);
 
     try {
+      // Ask the Pi wrapper for related record ids, then rank the results against local summaries.
       const aiResults = await queryAiIndex(searchQuery, 10);
       const ranked = rankSemanticResults(records, aiResults, searchQuery);
 
       if (ranked.length === 0) {
+        // If semantic search returns weak or irrelevant results, fall back to local keyword search.
         setSemanticResults(keywordResults);
         setSemanticStatusMessage("No semantic matches found. Showing local keyword results instead.");
       } else {
@@ -387,6 +428,7 @@ export function VaultConsole() {
         setSemanticStatusMessage(`Showing ${ranked.length} semantic matches from the Pi AI index.`);
       }
     } catch (error) {
+      // Any Pi/Chroma/API failure falls back to the local keyword result set instead of breaking search.
       setSemanticResults(keywordResults);
       setSemanticStatusMessage(`${getErrorMessage(error)} Falling back to local keyword results.`);
     } finally {
@@ -398,6 +440,7 @@ export function VaultConsole() {
     setBackupInFlight(true);
 
     try {
+      // Build a portable JSON snapshot of settings, records, and queued jobs.
       const blob = await createBackupBlob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -417,11 +460,14 @@ export function VaultConsole() {
     setRestoreInFlight(true);
 
     try {
+      // Read the uploaded backup file as text and replace the local snapshot with it.
       const text = await file.text();
       await restoreBackupFromText(text);
       await Promise.all([refreshRecords(), refreshJobCount()]);
+      // After restore, queue a fresh AI reindex so the Pi side can rebuild from the restored data.
       await requeueAllRecordsForIndexing();
       await refreshJobCount();
+      // Lock the vault after restore so the session state is reset cleanly.
       setSessionKey(null);
       setRecordBeingEdited(null);
       setRevealedSecrets({});
@@ -566,6 +612,7 @@ export function VaultConsole() {
 
       {status === "ready" ? (
         <>
+          {/* This top ready-state area summarizes the current unlocked vault and sync state. */}
           <section className="grid grid-two vault-panel">
             <article className="card">
               <h2>Vault unlocked</h2>
@@ -589,6 +636,7 @@ export function VaultConsole() {
             </article>
           </section>
 
+          {/* Configure the Pi wrapper endpoint and inspect queued AI sync work. */}
           <section className="grid grid-two vault-panel">
             <article className="card">
               <h2>Pi AI endpoint</h2>
@@ -633,10 +681,11 @@ export function VaultConsole() {
             </article>
           </section>
 
+          {/* Search sits above the record list so it can filter/rank what the user sees. */}
           <section className="grid">
             <VaultSearch
               isSemanticMode={isSemanticMode}
-              matchCount={visibleRecords.length}
+              matchLabel={searchMatchLabel}
               onChange={setSearchQuery}
               onSemanticModeChange={setIsSemanticMode}
               onSemanticSearch={handleSemanticSearch}
@@ -647,6 +696,7 @@ export function VaultConsole() {
             />
           </section>
 
+          {/* Backup/restore is kept separate so it does not complicate the CRUD form. */}
           <section className="grid">
             <VaultBackup
               backupInFlight={backupInFlight}
@@ -656,6 +706,7 @@ export function VaultConsole() {
             />
           </section>
 
+          {/* The form and the list work together: create/edit on the left, current records on the right. */}
           <section className="grid grid-two vault-panel">
             <VaultRecordForm
               initialValues={recordBeingEdited}
