@@ -12,6 +12,9 @@
 /.next/
 /out/
 
+# tauri / rust
+/src-tauri/target/
+
 # production
 /build
 
@@ -28,6 +31,9 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+
+# local runtime data
+/local-vault-api/data/*.db
 
 # vercel
 .vercel
