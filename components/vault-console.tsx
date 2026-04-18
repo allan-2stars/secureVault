@@ -23,6 +23,7 @@ import {
 } from "@/lib/vault/records";
 import { filterRecordsByKeyword, rankSemanticResults } from "@/lib/vault/search";
 import { listVaultJobs } from "@/lib/vault/job-repository";
+import { isDesktopRuntime } from "@/lib/vault/runtime";
 import { getVaultSetting, setVaultSetting } from "@/lib/vault/settings-repository";
 import { getVaultBootstrapState, initializeVault, unlockVault } from "@/lib/vault/settings";
 
@@ -50,6 +51,14 @@ function getErrorMessage(error: unknown) {
   }
 
   return "Something went wrong. Please try again.";
+}
+
+function shouldRetryDesktopStartup(error: unknown) {
+  return (
+    isDesktopRuntime &&
+    error instanceof Error &&
+    error.message.includes("Local Vault API is unavailable")
+  );
 }
 
 export function VaultConsole() {
@@ -131,28 +140,39 @@ export function VaultConsole() {
     let cancelled = false;
 
     const loadState = async () => {
-      try {
-        // Read vault/bootstrap settings from local storage when the screen first loads.
-        const bootstrap = await getVaultBootstrapState();
+      const maxAttempts = isDesktopRuntime ? 15 : 1;
 
-        if (cancelled) {
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          // Read vault/bootstrap settings from durable storage when the screen first loads.
+          const bootstrap = await getVaultBootstrapState();
+
+          if (cancelled) {
+            return;
+          }
+
+          setEncryptionVersion(bootstrap.encryptionVersion);
+          setAppMode(bootstrap.mode);
+          setSetupBlockedReason(bootstrap.setupBlockedReason);
+          setStatus(bootstrap.setupBlockedReason ? "unavailable" : bootstrap.initialized ? "locked" : "setup");
+          setAiApiBaseUrl((await getVaultSetting<string>("ai_api_base_url")) ?? "");
+          await refreshJobCount();
+          await refreshRecords();
+          return;
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
+          if (attempt < maxAttempts && shouldRetryDesktopStartup(error)) {
+            await new Promise((resolve) => window.setTimeout(resolve, 500));
+            continue;
+          }
+
+          setFeedback(getErrorMessage(error));
+          setStatus("unavailable");
           return;
         }
-
-        setEncryptionVersion(bootstrap.encryptionVersion);
-        setAppMode(bootstrap.mode);
-        setSetupBlockedReason(bootstrap.setupBlockedReason);
-        setStatus(bootstrap.setupBlockedReason ? "unavailable" : bootstrap.initialized ? "locked" : "setup");
-        setAiApiBaseUrl((await getVaultSetting<string>("ai_api_base_url")) ?? "");
-        await refreshJobCount();
-        await refreshRecords();
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        setFeedback(getErrorMessage(error));
-        setStatus("unavailable");
       }
     };
 

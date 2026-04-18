@@ -41,3 +41,35 @@ The same verification now runs automatically on every push to `main` and every p
   - Local Vault API
   - SQLite durable store
   - Pi semantic search service
+
+## Packaging Readiness
+
+- Tauri planning notes live in [docs/tauri_packaging_readiness.md](/home/sighpega/dev/secureVault/docs/tauri_packaging_readiness.md)
+- frontend env example lives in [.env.example](/home/sighpega/dev/secureVault/.env.example)
+- Local Vault API env example lives in [local-vault-api/.env.example](/home/sighpega/dev/secureVault/local-vault-api/.env.example)
+
+## Desktop Dev
+
+- Tauri scaffold now lives in [src-tauri](/home/sighpega/dev/secureVault/src-tauri)
+- desktop web build uses `npm run build:desktop-web`
+- desktop prerequisite check uses `npm run tauri:doctor`
+- Tauri dev/build commands are:
+  - `npm run tauri:dev`
+  - `npm run tauri:build`
+
+Current Milestone 8 implementation launches the Local Vault API as a Python sidecar process and stores SQLite in the desktop app-data directory.
+
+## Tauri Prerequisites
+
+Desktop packaging needs more than Node.js:
+
+- Rust/Cargo must be installed and available on `PATH`
+- `python3` must be available on `PATH` for the current Local Vault API sidecar launcher
+- Linux also needs the Tauri system packages documented at the official prerequisites page:
+  - https://v2.tauri.app/start/prerequisites/
+
+If `npm run tauri:build` fails immediately, run:
+
+- `npm run tauri:doctor`
+
+That command checks the local machine for the desktop build prerequisites and prints the missing step.

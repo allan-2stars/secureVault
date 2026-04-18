@@ -5,8 +5,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:desktop-web": "cross-env NEXT_PUBLIC_DESKTOP_RUNTIME=tauri NEXT_PUBLIC_LOCAL_VAULT_API_BASE_URL=http://127.0.0.1:9100 next build",
     "start": "next start",
     "lint": "next lint",
+    "tauri:build": "node scripts/run-tauri-command.mjs build",
+    "tauri:dev": "node scripts/run-tauri-command.mjs dev",
+    "tauri:doctor": "node scripts/check-tauri-prereqs.mjs",
     "typecheck": "tsc --noEmit",
     "test:unit": "node --import tsx --test tests/record-repository.test.ts tests/job-repository.test.ts tests/settings-repository.test.ts tests/backup-repository.test.ts"
   },
@@ -16,12 +20,14 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
     "@next/eslint-plugin-next": "^15.0.0",
     "@typescript-eslint/eslint-plugin": "^8.30.1",
     "@typescript-eslint/parser": "^8.30.1",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "cross-env": "^7.0.3",
     "eslint": "^9.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.0.0"

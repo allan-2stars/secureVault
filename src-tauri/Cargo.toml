@@ -1,0 +1,17 @@
+[package]
+name = "securevault_ai_desktop"
+version = "0.1.0"
+description = "SecureVault AI desktop shell"
+authors = ["SecureVault AI"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde_json = "1"
+tauri = { version = "2", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
