@@ -14,6 +14,10 @@ class Settings:
         "LOCAL_VAULT_ALLOW_ORIGINS",
         "http://localhost:3000,http://127.0.0.1:3000",
     )
+    allow_origin_regex: str = os.getenv(
+        "LOCAL_VAULT_ALLOW_ORIGIN_REGEX",
+        r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|https?://tauri\.localhost|tauri://localhost)$",
+    )
     db_path_raw: str = os.getenv(
         "LOCAL_VAULT_DB_PATH",
         str(Path(__file__).resolve().parents[1] / "data" / "securevault.db"),

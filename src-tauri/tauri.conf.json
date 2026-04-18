@@ -5,7 +5,8 @@
   "identifier": "ai.securevault.desktop",
   "build": {
     "beforeBuildCommand": "npm run build:desktop-web",
-    "beforeDevCommand": "npm run build:desktop-web",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:3000",
     "frontendDist": "../out"
   },
   "bundle": {

@@ -24,7 +24,7 @@ import {
 import { filterRecordsByKeyword, rankSemanticResults } from "@/lib/vault/search";
 import { listVaultJobs } from "@/lib/vault/job-repository";
 import { isDesktopRuntime } from "@/lib/vault/runtime";
-import { getVaultSetting, setVaultSetting } from "@/lib/vault/settings-repository";
+import { setVaultSetting } from "@/lib/vault/settings-repository";
 import { getVaultBootstrapState, initializeVault, unlockVault } from "@/lib/vault/settings";
 
 type VaultStatus = "loading" | "setup" | "locked" | "ready" | "unavailable";
@@ -140,7 +140,7 @@ export function VaultConsole() {
     let cancelled = false;
 
     const loadState = async () => {
-      const maxAttempts = isDesktopRuntime ? 15 : 1;
+      const maxAttempts = isDesktopRuntime ? 40 : 1;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
@@ -155,7 +155,7 @@ export function VaultConsole() {
           setAppMode(bootstrap.mode);
           setSetupBlockedReason(bootstrap.setupBlockedReason);
           setStatus(bootstrap.setupBlockedReason ? "unavailable" : bootstrap.initialized ? "locked" : "setup");
-          setAiApiBaseUrl((await getVaultSetting<string>("ai_api_base_url")) ?? "");
+          setAiApiBaseUrl(bootstrap.aiApiBaseUrl);
           await refreshJobCount();
           await refreshRecords();
           return;

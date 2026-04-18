@@ -14,6 +14,7 @@ const LOCAL_API_ALLOW_ORIGINS: &str =
 
 struct LocalVaultApiState(Mutex<Option<Child>>);
 
+#[allow(unused_variables)]
 fn resolve_local_vault_api_dir(app: &AppHandle) -> Result<PathBuf, String> {
     #[cfg(debug_assertions)]
     {
@@ -91,6 +92,12 @@ fn main() {
         .setup(|app| {
             let child = spawn_local_vault_api(&app.handle())?;
             app.manage(LocalVaultApiState(Mutex::new(Some(child))));
+
+            #[cfg(debug_assertions)]
+            if let Some(window) = app.get_webview_window("main") {
+                window.open_devtools();
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())

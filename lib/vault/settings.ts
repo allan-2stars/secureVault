@@ -9,6 +9,7 @@ import { listVaultRecordsForRead } from "@/lib/vault/record-repository";
 import { getAllVaultSettings, setVaultSettings } from "@/lib/vault/settings-repository";
 
 type VaultBootstrapState = {
+  aiApiBaseUrl: string;
   encryptionVersion: string | null;
   initialized: boolean;
   mode: "privacy" | null;
@@ -25,6 +26,7 @@ export async function getVaultBootstrapState(): Promise<VaultBootstrapState> {
       : null;
 
   return {
+    aiApiBaseUrl: typeof settings.ai_api_base_url === "string" ? settings.ai_api_base_url : "",
     initialized,
     encryptionVersion:
       typeof settings.encryption_version === "string" ? settings.encryption_version : null,
