@@ -1,4 +1,3 @@
-import { getAllRecords, getRecord, type VaultRecord } from "@/lib/storage/indexeddb";
 import { buildAiIndexText } from "@/lib/vault/ai-index";
 import {
   deleteLocalVaultApiRecord,
@@ -8,6 +7,7 @@ import {
   type LocalVaultApiRecord,
   upsertLocalVaultApiRecord
 } from "@/lib/vault/local-vault-api";
+import { type VaultRecord } from "@/lib/vault/types";
 
 function sortRecordsByUpdatedAt(records: VaultRecord[]): VaultRecord[] {
   return [...records].sort((left, right) => right.updated_at.localeCompare(left.updated_at));
@@ -67,80 +67,52 @@ export function mapVaultRecordToLocalVaultApiRecord(record: VaultRecord): LocalV
 }
 
 export type RecordReadClients = {
-  getIndexedDbRecord: (id: string) => Promise<VaultRecord | null>;
-  listIndexedDbRecords: () => Promise<VaultRecord[]>;
-  getApiRecord?: (id: string) => Promise<LocalVaultApiRecord>;
-  listApiRecords?: () => Promise<LocalVaultApiRecord[]>;
+  getApiRecord: (id: string) => Promise<LocalVaultApiRecord>;
+  listApiRecords: () => Promise<LocalVaultApiRecord[]>;
 };
 
 export type RecordWriteClients = {
-  deleteApiRecord?: (id: string) => Promise<void>;
-  deleteIndexedDbRecord: (id: string) => Promise<void>;
-  putIndexedDbRecord: (record: VaultRecord) => Promise<void>;
-  upsertApiRecord?: (record: LocalVaultApiRecord) => Promise<LocalVaultApiRecord>;
+  deleteApiRecord: (id: string) => Promise<void>;
+  upsertApiRecord: (record: LocalVaultApiRecord) => Promise<LocalVaultApiRecord>;
 };
 
-export type RecordSaveClients = Pick<RecordWriteClients, "putIndexedDbRecord" | "upsertApiRecord">;
-export type RecordDeleteClients = Pick<RecordWriteClients, "deleteApiRecord" | "deleteIndexedDbRecord">;
+export type RecordSaveClients = Pick<RecordWriteClients, "upsertApiRecord">;
+export type RecordDeleteClients = Pick<RecordWriteClients, "deleteApiRecord">;
 
 export async function listVaultRecordsForReadWithClients(
-  clients: Pick<RecordReadClients, "listIndexedDbRecords" | "listApiRecords">
+  clients: Pick<RecordReadClients, "listApiRecords">
 ): Promise<VaultRecord[]> {
-  if (!clients.listApiRecords) {
-    return sortRecordsByUpdatedAt(await clients.listIndexedDbRecords());
-  }
-
-  try {
-    return sortRecordsByUpdatedAt((await clients.listApiRecords()).map(mapLocalVaultApiRecordToVaultRecord));
-  } catch {
-    return sortRecordsByUpdatedAt(await clients.listIndexedDbRecords());
-  }
-}
-
-export function choosePreferredRecord(
-  apiRecord: VaultRecord | null,
-  indexedDbRecord: VaultRecord | null
-): VaultRecord | null {
-  if (apiRecord) {
-    return apiRecord;
-  }
-
-  return indexedDbRecord;
+  return sortRecordsByUpdatedAt((await clients.listApiRecords()).map(mapLocalVaultApiRecordToVaultRecord));
 }
 
 export async function getVaultRecordForReadWithClients(
   id: string,
-  clients: Pick<RecordReadClients, "getIndexedDbRecord" | "getApiRecord">
+  clients: Pick<RecordReadClients, "getApiRecord">
 ): Promise<VaultRecord | null> {
-  const indexedDbRecord = await clients.getIndexedDbRecord(id);
-
-  if (!clients.getApiRecord) {
-    return indexedDbRecord;
-  }
-
-  try {
-    const apiRecord = mapLocalVaultApiRecordToVaultRecord(await clients.getApiRecord(id));
-    return choosePreferredRecord(apiRecord, indexedDbRecord);
-  } catch {
-    return indexedDbRecord;
-  }
+  return mapLocalVaultApiRecordToVaultRecord(await clients.getApiRecord(id));
 }
 
 export async function listVaultRecordsForRead(): Promise<VaultRecord[]> {
+  if (!isLocalVaultApiConfigured()) {
+    throw new Error("Set NEXT_PUBLIC_LOCAL_VAULT_API_BASE_URL before loading vault records.");
+  }
+
   return listVaultRecordsForReadWithClients({
-    listIndexedDbRecords: getAllRecords,
-    listApiRecords: isLocalVaultApiConfigured() ? listLocalVaultApiRecords : undefined
+    listApiRecords: listLocalVaultApiRecords
   });
 }
 
 export async function listStoredVaultRecords(): Promise<VaultRecord[]> {
-  return getAllRecords();
+  return listVaultRecordsForRead();
 }
 
 export async function getVaultRecordForRead(id: string): Promise<VaultRecord | null> {
+  if (!isLocalVaultApiConfigured()) {
+    throw new Error("Set NEXT_PUBLIC_LOCAL_VAULT_API_BASE_URL before loading vault records.");
+  }
+
   return getVaultRecordForReadWithClients(id, {
-    getIndexedDbRecord: getRecord,
-    getApiRecord: isLocalVaultApiConfigured() ? getLocalVaultApiRecord : undefined
+    getApiRecord: getLocalVaultApiRecord
   });
 }
 
@@ -148,42 +120,33 @@ export async function saveVaultRecordWithClients(
   record: VaultRecord,
   clients: RecordSaveClients
 ): Promise<VaultRecord> {
-  const savedRecord = clients.upsertApiRecord
-    ? mapLocalVaultApiRecordToVaultRecord(await clients.upsertApiRecord(mapVaultRecordToLocalVaultApiRecord(record)))
-    : record;
-
-  await clients.putIndexedDbRecord(savedRecord);
-  return savedRecord;
+  return mapLocalVaultApiRecordToVaultRecord(await clients.upsertApiRecord(mapVaultRecordToLocalVaultApiRecord(record)));
 }
 
 export async function deleteVaultRecordWithClients(
   id: string,
   clients: RecordDeleteClients
 ): Promise<void> {
-  if (clients.deleteApiRecord) {
-    await clients.deleteApiRecord(id);
-  }
-
-  await clients.deleteIndexedDbRecord(id);
+  await clients.deleteApiRecord(id);
 }
 
 export async function saveVaultRecord(record: VaultRecord): Promise<VaultRecord> {
+  if (!isLocalVaultApiConfigured()) {
+    throw new Error("Set NEXT_PUBLIC_LOCAL_VAULT_API_BASE_URL before saving vault records.");
+  }
+
   return saveVaultRecordWithClients(record, {
-    putIndexedDbRecord: async (nextRecord) => {
-      const { putRecord } = await import("@/lib/storage/indexeddb");
-      await putRecord(nextRecord);
-    },
-    upsertApiRecord: isLocalVaultApiConfigured() ? upsertLocalVaultApiRecord : undefined
+    upsertApiRecord: upsertLocalVaultApiRecord
   });
 }
 
 export async function deleteVaultRecord(id: string): Promise<void> {
+  if (!isLocalVaultApiConfigured()) {
+    throw new Error("Set NEXT_PUBLIC_LOCAL_VAULT_API_BASE_URL before deleting vault records.");
+  }
+
   return deleteVaultRecordWithClients(id, {
-    deleteApiRecord: isLocalVaultApiConfigured() ? deleteLocalVaultApiRecord : undefined,
-    deleteIndexedDbRecord: async (recordId) => {
-      const { deleteRecord } = await import("@/lib/storage/indexeddb");
-      await deleteRecord(recordId);
-    }
+    deleteApiRecord: deleteLocalVaultApiRecord
   });
 }
 

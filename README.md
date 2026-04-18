@@ -4,17 +4,25 @@ Privacy-first, local-first secure vault web app with optional AI-assisted search
 
 ## Status
 
-Milestone 5 foundation is in place:
+The SQLite migration is effectively complete:
 
 - Next.js App Router shell
-- TypeScript project setup
-- offline base with manifest and service worker registration
-- IndexedDB schema for vault settings, records, and jobs
+- Local Vault API + SQLite durable storage boundary
 - browser-side AES-GCM key derivation and password verification
-- local setup and unlock flow for the master password
+- vault setup and unlock tied to SQLite-backed verifier metadata
 - encrypted record CRUD with explicit reveal/hide
 - local keyword search over safe metadata only
-- Pi FastAPI AI sync with IndexedDB retry queue and non-blocking local saves
+- SQLite-backed jobs queue and backup/restore
+- Pi FastAPI AI sync with a durable local retry queue
+
+## Runtime Boundaries
+
+- Frontend: Next.js UI and in-memory session state
+- Local Vault API: local HTTP boundary for durable vault operations
+- SQLite: source of truth for settings, records, jobs, backup/export, and restore/import
+- Pi wrapper: semantic search/index service that receives only approved `ai_index_text`
+
+IndexedDB is no longer the primary persistence layer.
 
 ## Verification
 
@@ -26,8 +34,10 @@ Run the repo checks locally with:
 
 The same verification now runs automatically on every push to `main` and every pull request through [ci.yml](/home/sighpega/dev/secureVault/.github/workflows/ci.yml).
 
-## Planned Next
+## Next Packaging Step
 
-- semantic AI query UI and result ranking
-- Chroma/Pi failure fallback behavior in the search experience
-- backup and restore
+- prepare local desktop packaging around the existing split between:
+  - Next.js frontend
+  - Local Vault API
+  - SQLite durable store
+  - Pi semantic search service

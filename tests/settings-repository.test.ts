@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { VaultSettingKey } from "@/lib/storage/indexeddb";
+import type { VaultSettingKey } from "@/lib/vault/types";
 import {
   deleteVaultSettingWithClients,
   getAllVaultSettingsWithClients,
@@ -32,7 +32,6 @@ function installWindowCrypto() {
 
 test("existing vault detection uses SQLite-backed settings as the source of truth", async () => {
   const settings = await getAllVaultSettingsWithClients({
-    getIndexedDbSettingsMap: async () => ({}),
     listApiSettings: async () => [
       { key: "vault_initialized", value: true },
       { key: "encryption_version", value: "aes-gcm-v1" },
@@ -48,7 +47,6 @@ test("vault metadata cannot silently fall back to a fresh setup when SQLite sett
   await assert.rejects(
     () =>
       getVaultSettingWithClients("vault_initialized", {
-        getIndexedDbSetting: async () => null,
         getApiSetting: async () => {
           throw new Error("SQLite unavailable");
         }
@@ -69,13 +67,11 @@ test("fresh setup is blocked when an initialized vault already exists", async ()
       { key: "app_mode", value: "privacy" }
     ],
     {
-      deleteIndexedDbSetting: async () => {},
-      setIndexedDbSetting: async () => {},
-      setIndexedDbSettings: async () => {},
       upsertApiSetting: async () => {
         apiWrites += 1;
         return null;
-      }
+      },
+      deleteApiSetting: async () => {}
     }
   );
 
@@ -84,9 +80,6 @@ test("fresh setup is blocked when an initialized vault already exists", async ()
 
 test("primary settings persistence no longer depends on IndexedDB when SQLite settings are available", async () => {
   const settings = await getAllVaultSettingsWithClients({
-    getIndexedDbSettingsMap: async () => ({
-      ai_api_base_url: "http://stale-browser-copy"
-    }),
     listApiSettings: async () => [
       { key: "ai_api_base_url", value: "http://sqlite-source-of-truth" }
     ]
@@ -99,15 +92,12 @@ test("restore can delete durable settings through the shared repository contract
   const deleted: VaultSettingKey[] = [];
 
   await deleteVaultSettingWithClients("ai_api_base_url", {
-    deleteIndexedDbSetting: async (key) => {
-      deleted.push(key);
-    },
     deleteApiSetting: async (key) => {
       deleted.push(key);
     }
   });
 
-  assert.deepEqual(deleted, ["ai_api_base_url", "ai_api_base_url"]);
+  assert.deepEqual(deleted, ["ai_api_base_url"]);
 });
 
 test("correct master password verification still succeeds against persisted verifier material", async () => {

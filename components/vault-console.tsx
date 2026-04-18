@@ -30,14 +30,14 @@ type VaultStatus = "loading" | "setup" | "locked" | "ready" | "unavailable";
 
 const setupHighlights = [
   "Master password is used to derive an AES-GCM key in the browser.",
-  "Secret fields remain local and encrypted before IndexedDB persistence.",
+  "Secret fields remain local and encrypted before SQLite persistence.",
   "The derived key stays in memory only for the current session."
 ];
 
 const readyHighlights = [
-  "IndexedDB schema for settings, records, and jobs is initialized.",
+  "Local Vault API + SQLite is the durable boundary for vault data.",
   "AES-GCM encryption helpers are ready for record-level secret fields.",
-  "The vault is unlocked locally with no network dependency."
+  "The vault session key remains in memory only on this device."
 ];
 
 function sortRecordsByUpdatedAt(records: VaultRecordSummary[]) {
@@ -500,19 +500,19 @@ export function VaultConsole() {
           <div className="brand-mark">SV</div>
           <div className="brand-copy">
             <strong>SecureVault AI</strong>
-            <span>Milestone 5: AI sync and retry queue</span>
+            <span>Post-SQLite durable local vault</span>
           </div>
         </div>
         <ConnectionStatus />
       </header>
 
       <section className="hero">
-        <div className="eyebrow">Browser-only vault foundation</div>
+        <div className="eyebrow">Local API + SQLite durable boundary</div>
         <h1>Unlock local encryption first.</h1>
         <p>
-          This milestone adds the vault bootstrap layer: IndexedDB storage, master-password
-          setup, and browser-side AES-GCM key derivation. No secret data leaves the client,
-          and the derived key is kept in memory for the active session only.
+          The vault now uses the Local Vault API and SQLite as the durable local storage
+          boundary. No secret data leaves the client, and the derived key is kept in memory
+          for the active session only.
         </p>
         <div className="status-bar">
           <div className="status-pill">
@@ -536,7 +536,7 @@ export function VaultConsole() {
         <section className="grid">
           <article className="card">
             <h2>Loading vault status</h2>
-            <p>Checking IndexedDB and local vault settings.</p>
+            <p>Checking the Local Vault API and durable vault settings.</p>
           </article>
         </section>
       ) : null}
@@ -547,7 +547,7 @@ export function VaultConsole() {
             <h2>{setupBlockedReason ? "Vault recovery required" : "Browser support required"}</h2>
             <p>
               {setupBlockedReason ??
-                "SecureVault AI needs IndexedDB and Web Crypto to initialize the local vault in a safe way."}
+                "SecureVault AI needs the Local Vault API and Web Crypto to initialize the local vault in a safe way."}
             </p>
           </article>
         </section>
@@ -597,7 +597,7 @@ export function VaultConsole() {
             <h2>Unlock the vault</h2>
             <p>
               Unlocking derives the AES key locally and verifies it against an encrypted
-              local-only verifier stored in IndexedDB.
+              local-only verifier stored in SQLite through the Local Vault API.
             </p>
             <form className="vault-form" onSubmit={handleUnlock}>
               <label>
@@ -686,7 +686,7 @@ export function VaultConsole() {
                   <li key={item}>{item}</li>
                 ))}
                 <li>Only `record_id`, `ai_index_text`, `type`, `category`, and `tags` leave the browser.</li>
-                <li>Failed upsert or delete requests stay queued in IndexedDB for retry.</li>
+                <li>Failed upsert or delete requests stay queued durably in SQLite for retry.</li>
               </ul>
             </article>
           </section>
@@ -747,7 +747,7 @@ export function VaultConsole() {
             <article className="card">
               <h3>Session notes</h3>
               <ul>
-                <li>The in-memory session key is not persisted to IndexedDB or localStorage.</li>
+                <li>The in-memory session key is not persisted to local durable storage.</li>
                 <li>Network access is still unnecessary for storage and unlock behavior.</li>
                 <li>The app remains usable offline for this milestone foundation.</li>
               </ul>

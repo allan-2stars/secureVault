@@ -1,35 +1,22 @@
 import {
-  deleteSetting as deleteIndexedDbSetting,
-  getAllSettings,
-  getSetting as getIndexedDbSetting,
-  setSetting as setIndexedDbSetting,
-  setSettings as setIndexedDbSettings,
-  type VaultSettingKey,
-  type VaultSettingRecord
-} from "@/lib/storage/indexeddb";
-import {
   deleteLocalVaultApiSetting,
   getLocalVaultApiSetting,
   isLocalVaultApiConfigured,
   listLocalVaultApiSettings,
   upsertLocalVaultApiSetting
 } from "@/lib/vault/local-vault-api";
+import { type VaultSettingKey, type VaultSettingRecord } from "@/lib/vault/types";
 
 type SettingsMap = Partial<Record<VaultSettingKey, unknown>>;
 
 type SettingsReadClients = {
-  getIndexedDbSetting: <T>(key: VaultSettingKey) => Promise<T | null>;
-  getApiSetting?: (key: VaultSettingKey) => Promise<unknown>;
-  getIndexedDbSettingsMap: () => Promise<SettingsMap>;
-  listApiSettings?: () => Promise<Array<{ key: VaultSettingKey; value: unknown }>>;
+  getApiSetting: (key: VaultSettingKey) => Promise<unknown>;
+  listApiSettings: () => Promise<Array<{ key: VaultSettingKey; value: unknown }>>;
 };
 
 type SettingsWriteClients = {
-  deleteIndexedDbSetting: (key: VaultSettingKey) => Promise<void>;
-  setIndexedDbSetting: <T>(key: VaultSettingKey, value: T) => Promise<void>;
-  setIndexedDbSettings: (entries: Array<VaultSettingRecord>) => Promise<void>;
-  deleteApiSetting?: (key: VaultSettingKey) => Promise<void>;
-  upsertApiSetting?: (key: VaultSettingKey, value: unknown) => Promise<unknown>;
+  deleteApiSetting: (key: VaultSettingKey) => Promise<void>;
+  upsertApiSetting: (key: VaultSettingKey, value: unknown) => Promise<unknown>;
 };
 
 function toSettingsMap(entries: Array<{ key: VaultSettingKey; value: unknown }>): SettingsMap {
@@ -41,12 +28,8 @@ function toSettingsMap(entries: Array<{ key: VaultSettingKey; value: unknown }>)
 
 export async function getVaultSettingWithClients<T>(
   key: VaultSettingKey,
-  clients: Pick<SettingsReadClients, "getIndexedDbSetting" | "getApiSetting">
+  clients: Pick<SettingsReadClients, "getApiSetting">
 ): Promise<T | null> {
-  if (!clients.getApiSetting) {
-    return clients.getIndexedDbSetting<T>(key);
-  }
-
   try {
     return (await clients.getApiSetting(key)) as T;
   } catch {
@@ -55,12 +38,8 @@ export async function getVaultSettingWithClients<T>(
 }
 
 export async function getAllVaultSettingsWithClients(
-  clients: Pick<SettingsReadClients, "getIndexedDbSettingsMap" | "listApiSettings">
+  clients: Pick<SettingsReadClients, "listApiSettings">
 ): Promise<SettingsMap> {
-  if (!clients.listApiSettings) {
-    return clients.getIndexedDbSettingsMap();
-  }
-
   try {
     return toSettingsMap(await clients.listApiSettings());
   } catch {
@@ -71,80 +50,78 @@ export async function getAllVaultSettingsWithClients(
 export async function setVaultSettingWithClients<T>(
   key: VaultSettingKey,
   value: T,
-  clients: Pick<SettingsWriteClients, "setIndexedDbSetting" | "upsertApiSetting">
+  clients: Pick<SettingsWriteClients, "upsertApiSetting">
 ): Promise<void> {
-  if (clients.upsertApiSetting) {
-    await clients.upsertApiSetting(key, value);
-  }
-
-  await clients.setIndexedDbSetting(key, value);
+  await clients.upsertApiSetting(key, value);
 }
 
 export async function setVaultSettingsWithClients(
   entries: Array<VaultSettingRecord>,
   clients: SettingsWriteClients
 ): Promise<void> {
-  if (clients.upsertApiSetting) {
-    for (const entry of entries) {
-      await clients.upsertApiSetting(entry.key, entry.value);
-    }
+  for (const entry of entries) {
+    await clients.upsertApiSetting(entry.key, entry.value);
   }
-
-  await clients.setIndexedDbSettings(entries);
 }
 
 export async function deleteVaultSettingWithClients(
   key: VaultSettingKey,
-  clients: Pick<SettingsWriteClients, "deleteIndexedDbSetting" | "deleteApiSetting">
+  clients: Pick<SettingsWriteClients, "deleteApiSetting">
 ): Promise<void> {
-  if (clients.deleteApiSetting) {
-    await clients.deleteApiSetting(key);
-  }
-
-  await clients.deleteIndexedDbSetting(key);
+  await clients.deleteApiSetting(key);
 }
 
 export async function getVaultSetting<T>(key: VaultSettingKey): Promise<T | null> {
+  if (!isLocalVaultApiConfigured()) {
+    throw new Error("Set NEXT_PUBLIC_LOCAL_VAULT_API_BASE_URL before loading vault settings.");
+  }
+
   return getVaultSettingWithClients<T>(key, {
-    getIndexedDbSetting,
-    getApiSetting: isLocalVaultApiConfigured()
-      ? async (settingKey) => (await getLocalVaultApiSetting(settingKey))?.value ?? null
-      : undefined
+    getApiSetting: async (settingKey) => (await getLocalVaultApiSetting(settingKey))?.value ?? null
   });
 }
 
 export async function getAllVaultSettings(): Promise<SettingsMap> {
+  if (!isLocalVaultApiConfigured()) {
+    throw new Error("Set NEXT_PUBLIC_LOCAL_VAULT_API_BASE_URL before loading vault settings.");
+  }
+
   return getAllVaultSettingsWithClients({
-    getIndexedDbSettingsMap: getAllSettings,
-    listApiSettings: isLocalVaultApiConfigured()
-      ? async () =>
-          (await listLocalVaultApiSettings()).map((setting) => ({
-            key: setting.key as VaultSettingKey,
-            value: setting.value
-          }))
-      : undefined
+    listApiSettings: async () =>
+      (await listLocalVaultApiSettings()).map((setting) => ({
+        key: setting.key as VaultSettingKey,
+        value: setting.value
+      }))
   });
 }
 
 export async function setVaultSetting<T>(key: VaultSettingKey, value: T): Promise<void> {
+  if (!isLocalVaultApiConfigured()) {
+    throw new Error("Set NEXT_PUBLIC_LOCAL_VAULT_API_BASE_URL before saving vault settings.");
+  }
+
   return setVaultSettingWithClients(key, value, {
-    setIndexedDbSetting,
-    upsertApiSetting: isLocalVaultApiConfigured() ? upsertLocalVaultApiSetting : undefined
+    upsertApiSetting: upsertLocalVaultApiSetting
   });
 }
 
 export async function setVaultSettings(entries: Array<VaultSettingRecord>): Promise<void> {
+  if (!isLocalVaultApiConfigured()) {
+    throw new Error("Set NEXT_PUBLIC_LOCAL_VAULT_API_BASE_URL before saving vault settings.");
+  }
+
   return setVaultSettingsWithClients(entries, {
-    deleteIndexedDbSetting,
-    setIndexedDbSetting,
-    setIndexedDbSettings,
-    upsertApiSetting: isLocalVaultApiConfigured() ? upsertLocalVaultApiSetting : undefined
+    deleteApiSetting: deleteLocalVaultApiSetting,
+    upsertApiSetting: upsertLocalVaultApiSetting
   });
 }
 
 export async function deleteVaultSetting(key: VaultSettingKey): Promise<void> {
+  if (!isLocalVaultApiConfigured()) {
+    throw new Error("Set NEXT_PUBLIC_LOCAL_VAULT_API_BASE_URL before deleting vault settings.");
+  }
+
   return deleteVaultSettingWithClients(key, {
-    deleteIndexedDbSetting,
-    deleteApiSetting: isLocalVaultApiConfigured() ? deleteLocalVaultApiSetting : undefined
+    deleteApiSetting: deleteLocalVaultApiSetting
   });
 }

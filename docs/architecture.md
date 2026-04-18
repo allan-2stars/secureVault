@@ -2,6 +2,13 @@
 
 SecureVault AI is a **local-first, privacy-preserving vault system** with optional AI-assisted search powered by a **user-controlled Chroma instance (Pi)**.
 
+The post-migration architecture separates:
+
+- frontend UI and in-memory session state
+- Local Vault API as the local durable boundary
+- SQLite as the source of truth for vault data
+- Pi/Chroma semantic search as a separate optional service
+
 The architecture strictly enforces **data isolation**:
 
 - Secrets never leave the client
@@ -22,7 +29,27 @@ The architecture strictly enforces **data isolation**:
 │ Vault Logic                │  
 │ Search Engine              │  
 │ Crypto Module              │  
-│ IndexedDB Adapter          │  
+│ In-memory Session State    │  
+└────────────┬───────────────┘  
+             │  
+             │ Local Durable API  
+             ▼  
+┌────────────────────────────┐  
+│     Local Vault API        │  
+│────────────────────────────│  
+│ Settings CRUD              │  
+│ Record CRUD                │  
+│ Jobs Queue CRUD            │  
+│ Backup / Restore Boundary  │  
+└────────────┬───────────────┘  
+             │  
+             ▼  
+┌────────────────────────────┐  
+│         SQLite             │  
+│────────────────────────────│  
+│ Durable Vault Settings     │  
+│ Durable Records            │  
+│ Durable Retry Jobs         │  
 └────────────┬───────────────┘  
              │  
              │ (AI Index Only)  
@@ -89,7 +116,7 @@ Split Data Layers
    ↓  
 Encrypt Secret Data (AES-GCM)  
    ↓  
-Store in IndexedDB  
+Store via Local Vault API → SQLite  
    ↓  
 Generate AI Index Text  
    ↓  
@@ -105,7 +132,7 @@ User Input
    ↓  
 Local Search Engine  
    ↓  
-IndexedDB Query  
+SQLite-backed local query  
    ↓  
 Return Results
 
@@ -121,7 +148,7 @@ Vector Similarity Search
    ↓  
 Return Record IDs  
    ↓  
-Fetch from IndexedDB  
+Fetch from Local Vault API  
    ↓  
 Decrypt (if needed)  
    ↓  
@@ -145,7 +172,7 @@ Display Temporarily
 
 User Export  
    ↓  
-Serialize IndexedDB  
+Serialize SQLite-backed snapshot  
    ↓  
 Keep Encrypted Fields  
    ↓  
@@ -159,7 +186,7 @@ Import File
    ↓  
 Validate Structure  
    ↓  
-Restore IndexedDB  
+Restore through Local Vault API → SQLite  
    ↓  
 Trigger AI Index Rebuild
 
@@ -198,8 +225,8 @@ Trigger AI Index Rebuild
 
 ### Storage Layer
 
-- IndexedDB wrapper
-- query abstraction
+- Local Vault API client
+- SQLite-backed repositories
 
 ---
 
@@ -207,7 +234,7 @@ Trigger AI Index Rebuild
 
 - AI index generator
 - Chroma API client
-- retry queue
+- SQLite-backed retry queue
 
 ---
 

@@ -1,9 +1,9 @@
 import { deleteAiIndex, upsertAiIndex } from "@/lib/vault/ai-client";
 import { buildAiIndexText } from "@/lib/vault/ai-index";
-import { type VaultJob } from "@/lib/storage/indexeddb";
 import { deleteVaultJob, listVaultJobs, saveVaultJob } from "@/lib/vault/job-repository";
 import { syncRecordIndexStatus } from "@/lib/vault/record-repository";
 import type { VaultRecordSummary } from "@/lib/vault/records";
+import { type VaultJob } from "@/lib/vault/types";
 
 function jobIdFor(type: VaultJob["type"], recordId: string): string {
   return `${type}:${recordId}`;

@@ -1,5 +1,4 @@
 import { decryptString, encryptString } from "@/lib/crypto/vault-crypto";
-import { type VaultRecord } from "@/lib/storage/indexeddb";
 import { createAccountHint } from "@/lib/vault/account";
 import {
   deleteVaultRecord,
@@ -8,6 +7,7 @@ import {
   listVaultRecordsForRead,
   saveVaultRecord
 } from "@/lib/vault/record-repository";
+import { type VaultRecord } from "@/lib/vault/types";
 
 export type VaultRecordFormValues = {
   account: string;

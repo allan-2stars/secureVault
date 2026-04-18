@@ -33,7 +33,7 @@ export default function OfflinePage() {
         <article className="card">
           <h2>Planned for later milestones</h2>
           <ul>
-            <li>Offline CRUD using IndexedDB</li>
+            <li>Offline CRUD through the Local Vault API and SQLite</li>
             <li>Offline keyword search</li>
             <li>AI-search fallback messaging when the Pi is unreachable</li>
           </ul>

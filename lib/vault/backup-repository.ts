@@ -1,4 +1,4 @@
-import type { VaultJob, VaultRecord, VaultSettingKey, VaultSettingRecord } from "@/lib/storage/indexeddb";
+import type { VaultJob, VaultRecord, VaultSettingKey, VaultSettingRecord } from "@/lib/vault/types";
 import { deleteVaultJob, listVaultJobs, saveVaultJob } from "@/lib/vault/job-repository";
 import { deleteVaultRecord, listVaultRecordsForRead, saveVaultRecord } from "@/lib/vault/record-repository";
 import {
